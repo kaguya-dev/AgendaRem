@@ -1,0 +1,23 @@
+import type { NextConfig } from 'next';
+
+const config: NextConfig = {
+  agentRules: false,
+  devIndicators: false,
+  distDir: process.env.NEXT_DIST_DIR ?? '.next',
+  output: 'standalone',
+  poweredByHeader: false,
+  serverExternalPackages: ['pg', '@electric-sql/pglite'],
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Referrer-Policy', value: 'same-origin' },
+        ],
+      },
+    ];
+  },
+};
+export default config;

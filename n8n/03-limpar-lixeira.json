@@ -1,0 +1,126 @@
+{
+  "name": "AgendaMagno · Limpar lixeira",
+  "nodes": [
+    {
+      "id": "e400b46d-a448-46d0-a95a-58705170aa70",
+      "name": "Como configurar",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -170
+      ],
+      "parameters": {
+        "width": 710,
+        "height": 210,
+        "content": "## AgendaMagno · Limpar lixeira\n1. Em Configuração, informe a URL interna da aplicação (Docker: http://app:3000).\n2. No HTTP Request, selecione a credencial Header Auth **AgendaMagno API**: nome Authorization; valor Bearer <INTERNAL_API_TOKEN>.\nSalve e ative o workflow. Horários em America/Bahia. Nenhum segredo está neste arquivo.\nA API valida, persiste e deduplica. Não ligue o webhook WAHA diretamente a este fluxo."
+      }
+    },
+    {
+      "id": "e052a507-eda8-4af3-9f8a-5ba08ba443ac",
+      "name": "Agendamento",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        280
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "a889c94c-084a-4bdc-9a1b-fdaabd3b3df6",
+      "name": "Configuração",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        260,
+        200
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3b814c72-204d-4636-8b8b-d7ea2f8bc624",
+              "name": "appUrl",
+              "value": "http://app:3000",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e7e9d2fc-99c4-44b8-83d4-8242c72ca3ff",
+      "name": "Executar na API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuração').first().json.appUrl + '/api/internal/cleanup' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURAR_CREDENCIAL_API",
+          "name": "AgendaMagno API"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500
+    }
+  ],
+  "connections": {
+    "Agendamento": {
+      "main": [
+        [
+          {
+            "node": "Configuração",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuração": {
+      "main": [
+        [
+          {
+            "node": "Executar na API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Bahia",
+    "executionTimeout": 180,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveExecutionProgress": false
+  },
+  "pinData": {},
+  "tags": []
+}

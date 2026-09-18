@@ -1,0 +1,221 @@
+
+
+,
+{
+  "name": "AgendaMagno · Processar mensagens",
+  "nodes": [
+    {
+      "id": "10afb1da-9912-4883-a622-150bfc022d41",
+      "name": "Como configurar",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -170
+      ],
+      "parameters": {
+        "width": 710,
+        "height": 210,
+        "content": "## AgendaMagno · Processar mensagens\n1. Em Configuração, informe a URL interna da aplicação (Docker: http://app:3000).\n2. No HTTP Request, selecione a credencial Header Auth **AgendaMagno API**: nome Authorization; valor Bearer <INTERNAL_API_TOKEN>.\n3. No Webhook, selecione Header Auth **AgendaMagno webhook**: nome X-Agenda-Token; valor <N8N_WEBHOOK_TOKEN>.\nSalve e ative o workflow. Horários em America/Bahia. Nenhum segredo está neste arquivo.\nA API valida, persiste e deduplica. Não ligue o webhook WAHA diretamente a este fluxo."
+      }
+    },
+    {
+      "id": "f93684e6-4ff7-42b3-b484-f6f25a34020e",
+      "name": "Agendamento",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        280
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c572090f-854b-4151-81c0-30e9947836fe",
+      "name": "Configuração",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        260,
+        200
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8119f7d7-394a-47bb-95eb-487feeb6da97",
+              "name": "appUrl",
+              "value": "http://app:3000",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "7df4fac9-c428-441f-8c97-4427a430d39c",
+      "name": "Executar na API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuração').first().json.appUrl + '/api/internal/process' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURAR_CREDENCIAL_API",
+          "name": "AgendaMagno API"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500
+    },
+    {
+      "id": "3c307f15-4909-41b2-b9c3-7678ff8b31fe",
+      "name": "Mensagem recebida",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        100
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agendamagno-processar",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "2b9a91a8-878d-4ba7-91b6-fb545fc4c580",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURAR_CREDENCIAL_WEBHOOK",
+          "name": "AgendaMagno webhook"
+        }
+      }
+    },
+    {
+      "id": "4fe94411-9cc5-4e1c-ac4f-241a8875682c",
+      "name": "Há mais trabalho?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        780,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c5c2cb2f-ce1f-4db6-8a00-b8be5fd21714",
+              "leftValue": "={{ $json.processed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Agendamento": {
+      "main": [
+        [
+          {
+            "node": "Configuração",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuração": {
+      "main": [
+        [
+          {
+            "node": "Executar na API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensagem recebida": {
+      "main": [
+        [
+          {
+            "node": "Configuração",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Executar na API": {
+      "main": [
+        [
+          {
+            "node": "Há mais trabalho?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Há mais trabalho?": {
+      "main": [
+        [
+          {
+            "node": "Executar na API",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Bahia",
+    "executionTimeout": 180,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveExecutionProgress": false
+  },
+  "pinData": {},
+  "tags": []
+}

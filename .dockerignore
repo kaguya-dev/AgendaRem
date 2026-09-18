@@ -1,0 +1,12 @@
+node_modules
+.next
+.next-e2e
+.data
+.env*
+!.env.example
+.git
+.agents
+.codex
+test-results
+playwright-report
+backups

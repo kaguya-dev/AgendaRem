@@ -1,0 +1,9 @@
+node_modules
+.next
+.next-e2e
+.data
+package-lock.json
+n8n/*.json
+test-results
+playwright-report
+PLANO.md
