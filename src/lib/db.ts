@@ -60,6 +60,8 @@ export async function createDatabase(url?: string, path?: string): Promise<Datab
 const globalDb = globalThis as unknown as { agendaDb?: Promise<Database> };
 export function db(): Promise<Database> {
   if (!globalDb.agendaDb) {
+    if (process.env.VERCEL === '1' && process.env.DATABASE_MODE === 'local')
+      throw new Error('Na Vercel, configure DATABASE_MODE=postgres e DATABASE_URL do Neon.');
     if (process.env.DATABASE_MODE !== 'local' && !process.env.DATABASE_URL)
       throw new Error('Configure DATABASE_URL (Neon) ou DATABASE_MODE=local no .env.');
     globalDb.agendaDb = createDatabase(

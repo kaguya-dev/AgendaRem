@@ -32,6 +32,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Command, Group, History, Task } from '@/lib/domain';
+import LlmSettings from '@/components/llm-settings';
 
 type View =
   'all' | 'inbox' | 'today' | 'overdue' | 'no_date' | 'completed' | 'trash' | `group:${string}`;
@@ -44,22 +45,20 @@ type Message = {
   error: string | null;
   created_at: string;
 };
-type Delivery = { id: string; status: string; error: string | null; attempts: number };
 type Data = {
   tasks: Task[];
   groups: Group[];
   history: History[];
-  settings: { retentionDays: number; whatsappStatus: string; whatsappUpdatedAt: string | null };
+  settings: { retentionDays: number };
   messages: Message[];
-  deliveries: Delivery[];
   llm: string;
   storage: string;
-  whatsappConfigured: boolean;
 };
 type Modal =
   | { type: 'task'; task?: Task }
   | { type: 'group'; group?: Group }
   | { type: 'settings' }
+  | { type: 'llm' }
   | { type: 'chat' }
   | { type: 'activity' }
   | null;
@@ -102,8 +101,6 @@ const statusLabels: Record<string, string> = {
   done: 'Concluído',
   clarification: 'Aguardando esclarecimento',
   failed: 'Falhou',
-  uncertain: 'Entrega incerta',
-  sending: 'Enviando',
 };
 const priorityLabels = { low: 'Baixa', normal: 'Normal', high: 'Alta' };
 
@@ -392,18 +389,8 @@ export default function Dashboard() {
   const pages = Math.max(1, Math.ceil(filtered.length / 20));
   const currentPage = Math.min(page, pages);
   const shown = filtered.slice((currentPage - 1) * 20, currentPage * 20);
-  const connection = !data?.whatsappConfigured
-    ? 'Não configurado'
-    : ({
-        WORKING: 'Conectado',
-        SCAN_QR_CODE: 'Aguardando QR',
-        STARTING: 'Conectando',
-        STOPPED: 'Desconectado',
-        FAILED: 'Falha na conexão',
-      }[data.settings.whatsappStatus] ?? 'Aguardando conexão');
   const issueCount =
-    (data?.messages.filter((m) => m.status === 'failed' || m.status === 'clarification').length ??
-      0) + (data?.deliveries.length ?? 0);
+    data?.messages.filter((m) => m.status === 'failed' || m.status === 'clarification').length ?? 0;
   const navItem = (key: View, label: string, icon: ReactNode, count?: number) => (
     <button className={`nav-item ${view === key ? 'selected' : ''}`} onClick={() => navigate(key)}>
       {icon}
@@ -494,16 +481,17 @@ export default function Dashboard() {
           )}
         </nav>
         <div className="sidebar-bottom">
-          <button className="connection-card" onClick={() => setModal({ type: 'activity' })}>
+          <button className="connection-card" onClick={() => setModal({ type: 'chat' })}>
             <MessageCircle size={20} />
             <span>
-              WhatsApp
-              <small>
-                <i className={data?.settings.whatsappStatus === 'WORKING' ? 'connected' : ''} />
-                {connection}
-              </small>
+              Assistente
+              <small>Organize por mensagem</small>
             </span>
             <ChevronRight size={15} />
+          </button>
+          <button className="nav-item" onClick={() => setModal({ type: 'llm' })}>
+            <Sparkles size={18} />
+            <span>Modelos de IA</span>
           </button>
           <button className="nav-item" onClick={() => setModal({ type: 'settings' })}>
             <Settings2 size={18} />
@@ -899,10 +887,10 @@ export default function Dashboard() {
             </span>
             <div>
               <h3>Uma conversa também organiza.</h3>
-              <p>Experimente criar e consultar tarefas por mensagem, direto daqui.</p>
+              <p>Crie e consulte tarefas por mensagem, no notebook ou no celular.</p>
             </div>
             <button className="button secondary" onClick={() => setModal({ type: 'chat' })}>
-              Testar conversa
+              Abrir assistente
               <ArrowRight size={16} />
             </button>
           </section>
@@ -949,18 +937,29 @@ export default function Dashboard() {
         <GroupDialog group={modal.group} busy={busy} close={() => setModal(null)} action={action} />
       )}
       {modal?.type === 'settings' && (
-        <SettingsDialog data={data} busy={busy} close={() => setModal(null)} action={action} />
+        <SettingsDialog
+          data={data}
+          busy={busy}
+          close={() => setModal(null)}
+          action={action}
+          openLlm={() => setModal({ type: 'llm' })}
+        />
+      )}
+      {modal?.type === 'llm' && (
+        <Dialog
+          title="Modelos de IA"
+          subtitle="Cadastre suas APIs e escolha a ordem de uso."
+          close={() => setModal(null)}
+          wide
+        >
+          <LlmSettings onChange={refresh} />
+        </Dialog>
       )}
       {modal?.type === 'chat' && (
         <ChatDialog data={data} close={() => setModal(null)} refresh={refresh} />
       )}
       {modal?.type === 'activity' && (
-        <ActivityDialog
-          data={data}
-          connection={connection}
-          close={() => setModal(null)}
-          refresh={refresh}
-        />
+        <ActivityDialog data={data} close={() => setModal(null)} refresh={refresh} />
       )}
     </div>
   );
@@ -1125,9 +1124,9 @@ function TaskDialog({
                       {timestamp(h.at)} ·{' '}
                       {h.source === 'panel'
                         ? 'Painel'
-                        : h.source === 'simulator'
-                          ? 'Conversa de teste'
-                          : 'WhatsApp'}
+                        : h.source === 'web'
+                          ? 'Assistente'
+                          : 'Registro anterior'}
                     </small>
                   </div>
                 </li>
@@ -1239,11 +1238,13 @@ function SettingsDialog({
   busy,
   close,
   action,
+  openLlm,
 }: {
   data: Data | null;
   busy: boolean;
   close: () => void;
   action: Action;
+  openLlm: () => void;
 }) {
   const [days, setDays] = useState(data?.settings.retentionDays ?? 30);
   return (
@@ -1275,7 +1276,7 @@ function SettingsDialog({
         />
         <p className="field-help">
           Vale apenas para novas entradas. Tarefas que já estão na lixeira mantêm a data informada.
-          A limpeza ocorre na próxima execução da rotina automática.
+          A limpeza ocorre ao acessar a agenda novamente.
         </p>
         <div className="settings-facts">
           <span>
@@ -1289,15 +1290,17 @@ function SettingsDialog({
           </span>
           <span>
             Interpretação de mensagens
-            <strong>
-              {data?.llm === 'none'
-                ? 'Comandos básicos'
-                : data?.llm === 'gemini'
-                  ? 'Gemini'
-                  : 'IA configurada'}
-            </strong>
+            <strong>{data?.llm === 'none' ? 'Comandos básicos' : 'IA configurada'}</strong>
           </span>
         </div>
+        <button
+          type="button"
+          className="button secondary full settings-llm-button"
+          onClick={openLlm}
+        >
+          <Sparkles size={16} />
+          Cadastrar e organizar modelos de IA
+        </button>
         <div className="dialog-actions">
           <button className="button secondary" type="button" onClick={close}>
             Cancelar
@@ -1324,37 +1327,54 @@ function ChatDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const end = useRef<HTMLDivElement>(null);
-  const messages = [...(data?.messages.filter((m) => m.channel === 'simulator') ?? [])].reverse();
+  const pendingRequest = useRef<{ text: string; id: string } | null>(null);
+  const messages = [...(data?.messages.filter((m) => m.channel === 'web') ?? [])].reverse();
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, busy]);
   async function send(e: FormEvent) {
     e.preventDefault();
-    if (!text.trim()) return;
+    if (!text.trim() || busy) return;
     setBusy(true);
     setError('');
     try {
-      const r = await api<{ error?: string }>('simulate', { text, requestId: crypto.randomUUID() });
+      if (pendingRequest.current?.text !== text) {
+        pendingRequest.current = { text, id: crypto.randomUUID() };
+      }
+      const r = await api<{ error?: string; status: string }>('chat', {
+        text,
+        requestId: pendingRequest.current.id,
+      });
+      if (r.status === 'processing') {
+        setError(
+          'Este pedido ainda está sendo processado. Aguarde um pouco e envie novamente para consultar a resposta, sem repetir a ação.',
+        );
+        await refresh();
+        return;
+      }
+      pendingRequest.current = null;
       setText('');
       if (r.error) setError(r.error);
       await refresh();
     } catch (e) {
       setError((e as Error).message);
+      await refresh();
     } finally {
       setBusy(false);
     }
   }
   return (
     <Dialog
-      title="Converse com sua agenda"
-      subtitle="Teste por aqui antes de conectar o WhatsApp."
+      title="Assistente da agenda"
+      subtitle="Seus próximos passos começam com uma mensagem."
       close={close}
       wide
     >
       <div className="chat-note">
         <MessageCircle size={16} />
-        Os comandos alteram suas tarefas reais.{' '}
-        {data?.llm === 'none' && 'A interpretação está no modo básico, sem IA.'}
+        {data?.llm === 'none'
+          ? 'Comandos básicos disponíveis. Cadastre uma API em Modelos de IA para interpretar outros pedidos.'
+          : 'Comandos básicos não consomem IA. Os demais usam os modelos na ordem configurada.'}
       </div>
       <div className="chat-messages">
         {!messages.length && (
@@ -1388,21 +1408,6 @@ function ChatDialog({
             ) : (
               <div className="bubble assistant muted">
                 {m.error ?? statusLabels[m.status] ?? 'Aguardando processamento'}
-                {m.status === 'failed' && (
-                  <button
-                    className="text-button"
-                    onClick={async () => {
-                      try {
-                        await api('retry', { id: m.id, kind: 'message' });
-                        await refresh();
-                      } catch (e) {
-                        setError((e as Error).message);
-                      }
-                    }}
-                  >
-                    Tentar novamente
-                  </button>
-                )}
               </div>
             )}
           </div>
@@ -1446,119 +1451,58 @@ function ChatDialog({
 }
 function ActivityDialog({
   data,
-  connection,
   close,
   refresh,
 }: {
   data: Data | null;
-  connection: string;
   close: () => void;
   refresh: () => Promise<void>;
 }) {
-  const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  async function retryItem(id: string, kind: 'message' | 'delivery', uncertain: boolean) {
-    if (
-      uncertain &&
-      !window.confirm(
-        'Confira o WhatsApp: essa resposta pode já ter sido entregue. Reenviar pode duplicar a mensagem. Deseja reenviar?',
-      )
-    )
-      return;
-    setBusy(true);
-    try {
-      await api('retry', { id, kind, confirmUncertain: uncertain });
-      await refresh();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
+  const messages = data?.messages.filter((m) => m.channel === 'web' || m.channel === 'panel') ?? [];
   return (
     <Dialog
-      title="Atividade e conexão"
-      subtitle="Acompanhe os pedidos e as respostas da sua agenda."
+      title="Atividade da agenda"
+      subtitle="Histórico de pedidos feitos pelo assistente e pelo painel."
       close={close}
       wide
     >
       <div className="activity-content">
-        <div className="activity-connection">
-          <MessageCircle size={23} />
-          <div>
-            <strong>WhatsApp · {connection}</strong>
-            <p>
-              {data?.settings.whatsappUpdatedAt
-                ? `Último evento: ${timestamp(data.settings.whatsappUpdatedAt)}`
-                : 'Use a conversa de teste enquanto o número não está conectado.'}
-            </p>
-            {data?.settings.whatsappStatus === 'SCAN_QR_CODE' && (
-              <p>Leia o QR no painel administrativo do WAHA para conectar a sessão.</p>
-            )}
-          </div>
-        </div>
-        {error && (
-          <p className="form-error" role="alert">
-            {error}
-          </p>
-        )}
         <div className="activity-heading">
           <h3>Pedidos recentes</h3>
-          <button className="text-button" onClick={() => void refresh()}>
-            <RefreshCw size={15} />
+          <button
+            className="text-button"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await refresh();
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <RefreshCw size={15} className={busy ? 'spin' : ''} />
             Atualizar
           </button>
         </div>
-        {!data?.messages.length && (
+        {!messages.length && (
           <p className="muted">Os pedidos aparecerão aqui conforme você usar a agenda.</p>
         )}
-        {data?.messages.map((m) => (
+        {messages.map((m) => (
           <div className="activity-item" key={m.id}>
             <span className={`activity-dot ${m.status === 'failed' ? 'failed' : ''}`} />
             <div>
-              <strong>
-                {m.body ||
-                  (m.channel === 'panel' ? 'Alteração pelo painel' : 'Mensagem processada')}
-              </strong>
+              <strong>{m.body || 'Alteração pelo painel'}</strong>
               <p>
+                {m.channel === 'web' ? 'Assistente' : 'Painel'} ·{' '}
                 {statusLabels[m.status] ?? m.status} · {timestamp(m.created_at)}
               </p>
               {m.error && <p className="form-error">{m.error}</p>}
-              {m.status === 'clarification' && <p>{m.reply}</p>}
+              {m.reply && <p>{m.reply}</p>}
             </div>
-            {m.status === 'failed' && (
-              <button
-                className="text-button"
-                disabled={busy}
-                onClick={() => void retryItem(m.id, 'message', false)}
-              >
-                Tentar de novo
-              </button>
-            )}
           </div>
         ))}
-        {Boolean(data?.deliveries.length) && (
-          <>
-            <h3 className="delivery-title">Respostas a entregar</h3>
-            {data?.deliveries.map((d) => (
-              <div className="activity-item" key={d.id}>
-                <div>
-                  <strong>{statusLabels[d.status] ?? d.status}</strong>
-                  <p>{d.error ?? 'Aguardando a próxima execução da automação.'}</p>
-                </div>
-                {['failed', 'uncertain'].includes(d.status) && (
-                  <button
-                    className="text-button"
-                    disabled={busy}
-                    onClick={() => void retryItem(d.id, 'delivery', d.status === 'uncertain')}
-                  >
-                    Reenviar
-                  </button>
-                )}
-              </div>
-            ))}
-          </>
-        )}
       </div>
     </Dialog>
   );

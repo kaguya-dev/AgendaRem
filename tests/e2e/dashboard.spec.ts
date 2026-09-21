@@ -40,7 +40,7 @@ test('painel completo: login, grupo, tarefa, edição, conclusão, restauração
   await page.getByRole('button', { name: 'Configurações', exact: true }).click();
   await page.getByLabel('Excluir após quantos dias?').fill('7');
   await page.getByRole('button', { name: 'Salvar preferência' }).click();
-  await page.getByRole('button', { name: 'Testar conversa' }).click();
+  await page.getByRole('button', { name: 'Abrir assistente', exact: true }).click();
   await page.getByLabel('Sua mensagem').fill('Anota: Comprar pilhas');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
   await expect(page.locator('.bubble.assistant').last()).toContainText('Comprar pilhas adicionada');
@@ -72,6 +72,10 @@ test('painel completo: login, grupo, tarefa, edição, conclusão, restauração
 test('rotas privadas não aceitam requisições anônimas', async ({ request }) => {
   expect((await request.get('/api/state')).status()).toBe(401);
   expect((await request.post('/api/actions', { data: { commands: [] } })).status()).toBe(401);
-  expect((await request.post('/api/internal/process')).status()).toBe(401);
-  expect((await request.post('/api/waha', { data: { event: 'message' } })).status()).toBe(401);
+  expect((await request.post('/api/internal/process')).status()).toBe(404);
+  expect((await request.post('/api/waha', { data: { event: 'message' } })).status()).toBe(404);
+  expect((await request.get('/api/llm-providers')).status()).toBe(401);
+  expect((await request.post('/api/llm-providers', { data: {} })).status()).toBe(401);
+  expect((await request.post('/api/chat', { data: {} })).status()).toBe(401);
+  expect((await request.get('/api/cron/cleanup')).status()).toBe(401);
 });

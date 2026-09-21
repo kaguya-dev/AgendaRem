@@ -71,8 +71,6 @@ export interface State {
     retentionDays: number;
     nextTaskId: number;
     revision: number;
-    whatsappStatus: string;
-    whatsappUpdatedAt: string | null;
   };
 }
 export function emptyState(): State {
@@ -86,8 +84,6 @@ export function emptyState(): State {
       retentionDays: 30,
       nextTaskId: 1,
       revision: 0,
-      whatsappStatus: 'NOT_CONFIGURED',
-      whatsappUpdatedAt: null,
     },
   };
 }

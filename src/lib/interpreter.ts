@@ -1,13 +1,14 @@
 import {
   commandsSchema,
   contextFor,
-  DomainError,
   localDate,
   normalize,
   pendingAnswer,
   type Command,
   type State,
 } from './domain';
+import type { Database } from './db';
+import { generateCommands } from './llm';
 
 function taskRef(text: string) {
   return text.replace(/^(?:a\s+)?(?:tarefa|atividade)\s+/i, '').trim();
@@ -122,32 +123,12 @@ export async function interpret(
   text: string,
   channel: string,
   now: Date,
-  charge: () => Promise<boolean>,
+  database: Database,
 ): Promise<Command[]> {
   const pending = pendingAnswer(state, text, channel, now);
   if (pending) return commandsSchema.parse(pending);
   const basic = basicInterpret(text, now);
   if (basic) return commandsSchema.parse(basic);
-  const provider = process.env.LLM_PROVIDER ?? 'none';
-  if (provider === 'none')
-    return [
-      {
-        op: 'clarify',
-        question:
-          'Ainda não entendi esse formato. Sem uma LLM configurada, tente “Anota: comprar pilhas”, “Finalizei #1” ou envie “ajuda”. Você também pode editar pelo painel.',
-      },
-    ];
-  if (!['gemini', 'compatible'].includes(provider))
-    throw new DomainError('Provedor de IA inválido na configuração.', 503);
-  const apiKey = process.env.LLM_API_KEY;
-  const model = process.env.LLM_MODEL;
-  if (!apiKey || !model)
-    throw new DomainError('Configure a chave e o modelo da IA, ou use os comandos básicos.', 503);
-  if (!(await charge()))
-    throw new DomainError(
-      'A cota diária de IA configurada foi atingida. Use os comandos básicos ou o painel.',
-      429,
-    );
   const ctx = contextFor(structuredClone(state), channel, now);
   const terms = normalize(text)
     .split(/\W+/)
@@ -175,61 +156,14 @@ Filtros: active (padrão), today, overdue, no_date, trash, completed, all. Concl
 Quando grupo não existir, use o nome pedido: a API fará a pergunta. Para criar grupo, só use create_group se solicitado explicitamente. Nomes de tarefas repetidos: preserve o título, não escolha um ID arbitrariamente.
 Datas relativas usam a data original. Data contraditória (dia da semana e número incompatíveis), vaga ou faltando informação: clarify. Ações não disponíveis (áudio, lembretes, recorrência, etiquetas, excluir grupos, reorganização automática, operações amplas): clarify explicando limitação. Se uma parte de um pedido for ambígua ou não suportada, retorne SOMENTE clarify, sem executar outras partes.
 Contexto (lista de candidatos parcial, não é lista completa): ${JSON.stringify({ groups: state.groups, candidates, recent: { groupId: ctx.groupId, taskIds: ctx.taskIds } })}`;
-  let url: string;
-  let body: unknown;
-  let headers: Record<string, string>;
-  if (provider === 'gemini') {
-    url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-    headers = { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey };
-    body = {
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: 'user', parts: [{ text }] }],
-      generationConfig: {
-        temperature: 0,
-        responseMimeType: 'application/json',
-        maxOutputTokens: 2048,
+  const commands = await generateCommands(system, text, database);
+  return (
+    commands ?? [
+      {
+        op: 'clarify',
+        question:
+          'Ainda não entendi esse formato. Cadastre uma IA em Configurações ou tente “Anota: comprar pilhas”, “Finalizei #1” ou “ajuda”. Você também pode editar pelo painel.',
       },
-    };
-  } else {
-    url = process.env.LLM_API_URL ?? '';
-    if (!url.startsWith('https://') && !/^http:\/\/(localhost|127\.0\.0\.1)(:|\/)/.test(url))
-      throw new DomainError('Configure uma URL HTTPS de chat/completions para a IA.', 503);
-    headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` };
-    body = {
-      model,
-      temperature: 0,
-      max_tokens: 2048,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: text },
-      ],
-    };
-  }
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(25000),
-  });
-  if (!response.ok)
-    throw new DomainError(
-      response.status === 429
-        ? 'A API da IA atingiu seu limite. Tente mais tarde ou use o painel.'
-        : 'A IA está indisponível. Nenhuma alteração foi feita.',
-      503,
-    );
-  const result = await response.json();
-  const output =
-    provider === 'gemini'
-      ? result.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('')
-      : result.choices?.[0]?.message?.content;
-  try {
-    return commandsSchema.parse(JSON.parse(output).commands);
-  } catch {
-    throw new DomainError(
-      'A IA retornou um formato inválido. Nenhuma alteração foi feita; reformule o pedido.',
-      422,
-    );
-  }
+    ]
+  );
 }

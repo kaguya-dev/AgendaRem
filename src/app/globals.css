@@ -2157,6 +2157,193 @@ label {
 .dialog-head p {
   color: #7f927b;
 }
+.settings-llm-button {
+  margin-top: 18px;
+  white-space: normal;
+}
+.llm-settings {
+  padding: 22px 25px 25px;
+}
+.llm-intro {
+  color: #61756a;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.llm-toolbar,
+.llm-provider-heading,
+.llm-provider-actions,
+.llm-form-actions,
+.llm-delete-confirm > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.llm-toolbar {
+  justify-content: space-between;
+  margin: 21px 0 12px;
+}
+.llm-toolbar h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.llm-loading,
+.llm-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--green);
+  margin: 15px 0;
+}
+.llm-notice svg {
+  flex-shrink: 0;
+}
+.llm-empty {
+  padding: 24px 20px;
+  text-align: center;
+  color: #6d8664;
+  background: #f7faf5;
+  border: 1px dashed #dce6d6;
+  border-radius: 10px;
+}
+.llm-empty h3 {
+  margin: 9px 0;
+}
+.llm-empty p {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.llm-provider-list {
+  display: grid;
+  gap: 12px;
+}
+.llm-provider {
+  border: 1px solid #e1e8de;
+  border-radius: 10px;
+  padding: 16px;
+  min-width: 0;
+}
+.llm-provider-heading {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.llm-provider-heading > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.llm-order {
+  color: #74836e;
+  font-size: 10px;
+}
+.llm-provider h3 {
+  margin-top: 3px;
+  font-size: 15px;
+}
+.llm-provider-heading p,
+.llm-provider-note {
+  color: #73806e;
+  font-size: 11px;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+.llm-status {
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: #f7f1e7;
+  color: #917342;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.llm-status.available {
+  background: var(--sage);
+  color: var(--green);
+}
+.llm-usage {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 12px 0;
+  margin: 12px 0 0;
+  border-top: 1px solid var(--line);
+}
+.llm-usage dt {
+  color: #7a8674;
+  font-size: 10px;
+}
+.llm-usage dd {
+  margin: 3px 0 0;
+  color: #4e6451;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.llm-provider-actions {
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.llm-provider-actions .text-button {
+  min-height: 32px;
+}
+.llm-delete-confirm {
+  margin-top: 10px;
+  padding: 12px;
+  background: #fdf5ef;
+  border-radius: 7px;
+  color: #946852;
+  font-size: 12px;
+}
+.llm-delete-confirm > div {
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.llm-add-button {
+  margin-top: 18px;
+}
+.llm-provider-form h3 {
+  margin-top: 22px;
+}
+.llm-provider-form fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.llm-provider-form fieldset > label {
+  margin-top: 18px;
+}
+.llm-provider-form label {
+  font-size: 12px;
+}
+.llm-provider-form label > span {
+  font-size: 10px;
+  font-weight: 400;
+  color: #71826b;
+}
+.llm-provider-form input,
+.llm-provider-form select {
+  font-size: 13px;
+  min-width: 0;
+}
+.llm-provider-form .form-grid > div {
+  min-width: 0;
+}
+.llm-enabled {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.llm-enabled input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--green);
+}
+.llm-form-actions {
+  justify-content: flex-end;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
 @media (max-width: 700px) {
   .task-title strong {
     font-size: 12px;
@@ -2170,5 +2357,23 @@ label {
   .dialog-error {
     margin-left: 19px;
     margin-right: 19px;
+  }
+  .llm-settings {
+    padding: 19px;
+  }
+  .llm-provider-heading {
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+  .llm-provider-form .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .llm-provider-form input,
+  .llm-provider-form select,
+  .chat-composer input {
+    font-size: 16px;
+  }
+  .llm-provider-actions .text-button {
+    min-height: 40px;
   }
 }

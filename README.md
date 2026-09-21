@@ -1,26 +1,25 @@
 # AgendaMagno
 
-MVP pessoal com painel Next.js, PostgreSQL no Neon, automações importáveis no n8n e integração WAHA. Interface em português, fuso `America/Bahia` e acesso por senha. Não inclui áudio, lembretes, recorrência, classificação automática, etiquetas ou outras evoluções do plano.
+Agenda pessoal com painel e conversa no navegador, acessível pelo notebook e pelo celular. Frontend e API ficam no mesmo projeto Next.js na Vercel; os dados ficam no PostgreSQL do Neon. A conversa é processada durante a própria requisição, sem serviços de automação ou processos permanentes. Interface em português, fuso `America/Bahia` e acesso por senha de um único proprietário.
+
+Os provedores de IA, modelos, chaves, prioridades e limites são cadastrados no próprio painel. A aplicação troca de provedor quando o anterior atinge um limite ou fica indisponível. Comandos básicos continuam funcionando sem nenhuma API de IA cadastrada.
 
 ## Testar localmente
 
-Requisito: **Node.js 22+**, com npm. Na primeira instalação, é preciso internet para baixar as dependências.
+Requisito: **Node.js 22.x**, com npm. Na primeira instalação é preciso internet para baixar as dependências.
 
 ```bash
 ./iniciar.sh
 ```
 
-Abra **http://localhost:3000**. A senha gerada está em `PANEL_PASSWORD` no arquivo `.env`. Você pode substituí-la por uma senha de sua escolha e reiniciar o servidor. O script não sobrescreve um `.env` existente.
+Abra **http://localhost:3000** e entre com a senha `PANEL_PASSWORD` do arquivo `.env`. Você pode substituí-la por uma senha de sua escolha e reiniciar o servidor. O script cria os segredos iniciais e, em um `.env` existente, acrescenta somente `LLM_ENCRYPTION_KEY` e `CRON_SECRET` quando ainda não estiverem definidos. Valores existentes, inclusive vazios, são preservados.
 
-- O script instala dependências quando necessário e cria a configuração inicial.
+- O script instala dependências quando necessário.
 - Os dados ficam em `.data/local`, preservados entre reinícios. O banco local é PGlite, um PostgreSQL embutido, sem Docker.
-- Esse atalho **sempre usa o banco local**, mesmo se o `.env` tiver uma URL Neon. Não copia dados para o Neon.
-- O painel funciona sem n8n, número de WhatsApp ou chave de IA.
-- Use **Testar conversa** para experimentar comandos. Eles alteram os mesmos dados do painel.
+- Esse atalho **sempre usa o banco local**, mesmo se o `.env` tiver uma URL Neon. Ele não copia dados para o Neon.
+- Use a conversa para criar e organizar tarefas; as alterações aparecem no mesmo painel.
 - Encerre com `Ctrl+C`. Para outra porta: `./iniciar.sh 3002`.
-- Se a porta estiver ocupada, encerre a outra instância ou escolha outra porta. Use o endereço `localhost` mostrado pelo script: a proteção de origem verifica esse endereço.
-
-O modo local não executa a rotina horária do n8n. A lixeira continua restaurável; a exclusão automática começa quando o workflow de limpeza estiver ativo.
+- Use o endereço `localhost` mostrado pelo script: a proteção de origem verifica esse endereço.
 
 Alternativa manual:
 
@@ -30,7 +29,74 @@ npm run setup
 npm run dev
 ```
 
-Nesse caso, as configurações de banco e endereço vêm do `.env` (banco local padrão: `.data/agenda`).
+Nesse caso, o banco e o endereço vêm do `.env`; o banco local padrão fica em `.data/agenda`.
+
+## Publicar na Vercel com Neon
+
+1. No Neon, crie um projeto para a agenda ou use o banco que já contém os dados dela. No painel de conexão, selecione **Pooled connection** e copie a URL completa, preservando os parâmetros SSL. O hostname da conexão agrupada contém `-pooler`. [Conexões no Neon](https://neon.com/blog/postgres-support-case-recap).
+2. Importe o repositório na Vercel como projeto **Next.js**, com a raiz deste repositório e build `npm run build`. O projeto fixa Node.js `22.x`, versão disponível na Vercel. [Versões do Node.js](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions).
+3. Em **Settings → Environment Variables**, cadastre as variáveis da tabela abaixo para **Production**. Use valores reais, sem os marcadores dos exemplos. `npm run setup` gera os segredos localmente para você copiar de forma privada.
+4. Faça o deploy. Se o domínio definitivo só aparecer depois do primeiro deploy, atualize `APP_URL` com esse endereço e faça um **Redeploy** para carregar a alteração.
+5. Abra o endereço HTTPS, entre com sua senha e cadastre suas APIs de IA pelo painel. Acesse o mesmo endereço no notebook e no celular: ambos usam os mesmos dados do Neon.
+
+| Variável             | Valor na Vercel                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_MODE`      | `postgres`                                                                                                                      |
+| `DATABASE_URL`       | URL de conexão agrupada do Neon, com SSL, como `postgresql://USUARIO:SENHA@SEU_HOST-pooler.neon.tech/SEU_BANCO?sslmode=require` |
+| `APP_URL`            | Origem exata do app, como `https://sua-agenda.vercel.app`; sem caminho ou barra final                                           |
+| `PANEL_PASSWORD`     | Senha privada para acessar o painel                                                                                             |
+| `SESSION_SECRET`     | Segredo aleatório de pelo menos 32 caracteres usado para assinar as sessões                                                     |
+| `LLM_ENCRYPTION_KEY` | Chave de 32 bytes: 64 caracteres hexadecimais ou base64; preserve-a entre deploys                                               |
+| `CRON_SECRET`        | Segredo aleatório de pelo menos 32 caracteres que autentica a limpeza diária da lixeira                                         |
+
+Nenhuma dessas variáveis usa prefixo `NEXT_PUBLIC_`. As chaves dos provedores de IA são cadastradas no painel e armazenadas criptografadas no banco; não vão para o código nem para as variáveis de ambiente de cada provedor. `LLM_ENCRYPTION_KEY` é a chave do servidor que permite descriptografá-las. Se ela for perdida ou trocada, será necessário cadastrar novamente as chaves das APIs.
+
+Para usar **Preview**, configure também suas variáveis nesse ambiente. Use um banco ou branch Neon de testes e `APP_URL` com a origem exata daquele preview; não reutilize a origem de produção. Alterações de variáveis exigem novo deploy. Esta aplicação permite uma origem por ambiente, então acessar por outro domínio exige ajustar `APP_URL`.
+
+O schema é aplicado de forma idempotente na primeira conexão. Para prepará-lo manualmente, configure `DATABASE_MODE=postgres` e a URL Neon no `.env`, então execute:
+
+```bash
+npm run db:migrate
+```
+
+Na Vercel, o banco local é bloqueado: configure o Neon antes de usar o app. O filesystem de uma função não serve como armazenamento persistente. Tarefas que você criou em `.data/local` não são transferidas automaticamente para um banco Neon novo.
+
+A estrutura foi preparada para hospedagem na Vercel e no Neon, sujeita às cotas e condições das suas contas. A conexão e o deploy reais precisam ser validados nessas contas. Não é necessário contratar um domínio próprio.
+
+O [vercel.json](vercel.json) habilita **Fluid Compute**. A API permite até 120 segundos por requisição para acomodar tentativas em vários provedores; esse tempo cabe no limite atual de 300 segundos do Hobby com Fluid Compute. [Configuração e limites do Fluid Compute](https://vercel.com/docs/fluid-compute).
+
+## Cadastrar IA e alternar provedores
+
+No menu **Modelos de IA**, clique em **Adicionar modelo** e cadastre um ou mais provedores com:
+
+- Nome para identificação, tipo de API e modelo disponível na sua conta.
+- Chave da API. Ao editar, deixe esse campo vazio para manter a chave já salva; ela não é retornada pelo servidor.
+- URL completa do endpoint HTTPS público de `chat/completions`, quando usar uma API compatível. Use porta padrão 443, sem parâmetros, fragmentos ou credenciais na URL. O adaptador Gemini usa a API nativa.
+- Prioridade: os menores números são tentados primeiro.
+- Limites diários de requisições e tokens, além da opção de ativar ou desativar o provedor. No limite de tokens, `0` significa sem limite local.
+
+Você pode adicionar até 20 modelos, do mesmo serviço ou de serviços diferentes. O cadastro fica salvo no banco, sem alteração de código ou novo deploy. A interface mostra uso do dia, falhas e pausa temporária de cada provedor. A API compatível precisa aceitar autenticação Bearer e os campos `model`, `messages`, `max_tokens`, `temperature` e `response_format` com `json_object`.
+
+O fluxo é:
+
+1. Comandos básicos reconhecidos são resolvidos diretamente, sem gastar tokens.
+2. Pedidos que precisam de IA usam o primeiro provedor habilitado com orçamento disponível e fora da pausa temporária.
+3. Em caso de cota esgotada, erros HTTP `429`/`402` ou falha transitória, o sistema pausa esse provedor e tenta o próximo na mesma mensagem.
+4. Cada mensagem tenta no máximo quatro provedores, com orçamento de 85 segundos para as tentativas de IA. Provedores restantes podem ser usados nas próximas mensagens. Se nenhum estiver disponível, a conversa informa a indisponibilidade; nenhuma ação parcial é aplicada.
+
+Se uma IA responder com comandos em formato inválido, o pedido termina sem alterações e pede reformulação; nesse caso não é tentada outra interpretação automaticamente.
+
+Os limites diários usam o fuso `America/Bahia`. O uso de tokens vem dos metadados retornados pela API ou de uma estimativa conservadora quando o provedor não informa o consumo. O limite é verificado antes da chamada, mas uma chamada ainda pode ultrapassar o saldo configurado. **Liberar tentativa** retira a pausa de um provedor sem zerar seu uso diário.
+
+Não existe uma consulta universal ao saldo real de todas as APIs. A troca automática depende dos limites cadastrados, do consumo observado e dos erros devolvidos pelo serviço. APIs ou modelos que compartilham a mesma cota podem ficar indisponíveis juntos. Um limite dentro da agenda não transforma uma API paga em gratuita: confira o plano e os controles de cobrança de cada provedor.
+
+## Lixeira e agendamento
+
+A exclusão de itens com retenção vencida acontece durante o uso da aplicação e também pode rodar sem ninguém abrir o app: [vercel.json](vercel.json) agenda `GET /api/cron/cleanup` diariamente com `0 6 * * *`, às 06:00 UTC (03:00 em `America/Bahia`).
+
+Esse cron é compatível com a frequência diária do plano Hobby, que não garante execução no minuto exato. Ele faz manutenção da lixeira, não envio de lembretes. [Limites do cron da Vercel](https://vercel.com/docs/cron-jobs/usage-and-pricing).
+
+Defina `CRON_SECRET` em produção: a Vercel envia automaticamente `Authorization: Bearer SEU_SEGREDO`, que a rota valida. Sem esse segredo, a rota não aceita chamadas; a limpeza durante o uso continua funcionando. No painel da Vercel, confira os logs e a execução em **Cron Jobs** depois do deploy. [Proteção do cron](https://vercel.com/docs/cron-jobs/manage-cron-jobs).
 
 ## O que está implementado
 
@@ -38,16 +104,16 @@ Nesse caso, as configurações de banco e endereço vêm do `.env` (banco local 
 - Tarefas: título, descrição, prioridade, situação, data e horário opcionais.
 - Filtros: hoje, atrasadas, sem prazo, concluídas e lixeira; busca por título/descrição e paginação.
 - Concluir envia à lixeira. Descartar não marca conclusão. Restaurar retorna a pendente.
-- Retenção configurável (30 dias inicialmente). A mudança vale para novas entradas, e repetir a conclusão não reinicia o prazo.
-- Histórico e desfazer por 24 horas, com detecção de conflito entre painel e mensagens. Criar uma lista pode ser desfeito como conjunto. Grupos e configurações não têm desfazer.
-- Até 10 ações por comando, aplicadas atomicamente. Ambiguidades pedem esclarecimento, sem gravar partes do pedido.
-- Referências recentes por conversa (30 minutos), seleção de tarefas homônimas e continuação por “mostrar mais”.
-- Fila persistente de mensagens, deduplicação por sessão/ID e tentativas limitadas. Envio incerto exige revisão manual em **Atividade**.
-- Login com cookie HttpOnly, assinatura de sessão, verificação de origem, limite de tentativas e API interna autenticada.
+- Retenção configurável, inicialmente 30 dias. A mudança vale para novas entradas; repetir a conclusão não reinicia o prazo.
+- Histórico e desfazer por 24 horas, com detecção de conflito entre painel e conversa. Criar uma lista pode ser desfeito como conjunto. Grupos e configurações não têm desfazer.
+- Até dez ações por comando, aplicadas atomicamente. Ambiguidades pedem esclarecimento, sem gravar partes do pedido.
+- Referências recentes por conversa por 30 minutos, seleção de tarefas homônimas e continuação por “mostrar mais”.
+- Login com cookie HttpOnly, assinatura de sessão, verificação de origem e limite de tentativas.
+- Manifesto e ícones para adicionar o webapp à tela inicial nos navegadores compatíveis. O aplicativo depende de internet; não há sincronização offline nem notificações push implementadas.
 
-## Comandos sem LLM
+Áudio, lembretes automáticos, recorrência, etiquetas e contas para vários usuários continuam fora desta versão.
 
-O padrão é `LLM_PROVIDER=none`. Um interpretador determinístico permite testar comandos básicos gratuitamente:
+## Comandos básicos sem IA
 
 ```text
 Crie um grupo chamado Estudos
@@ -77,103 +143,38 @@ Desfaça a última alteração
 Ajuda
 ```
 
-O modo básico reconhece formatos definidos; não promete entender toda linguagem natural. Quando houver duas tarefas com o mesmo título, responda com o número da opção. Para um grupo inexistente, “criar” confirma a criação e retoma o pedido. Um novo comando claro substitui a pergunta pendente.
+O modo básico reconhece formatos definidos. Para frases fora desses formatos, cadastre uma API de IA. Quando houver tarefas homônimas, responda com o número da opção. Para um grupo inexistente, “criar” confirma a criação e retoma o pedido. Um novo comando claro substitui a pergunta pendente.
 
-## Conectar o Neon
+## Atualizar a instalação anterior
 
-No `.env`:
+Execute `npm run setup` para acrescentar os novos segredos ausentes ao `.env`. Na Vercel, cadastre-os também nas variáveis do projeto. Mantenha a mesma conexão com o banco para preservar tarefas, grupos e histórico. A inicialização acrescenta as tabelas de provedores e consumo de IA; não apaga as tabelas antigas de transporte.
 
-```dotenv
-DATABASE_MODE=postgres
-DATABASE_URL=postgresql://USUARIO:SENHA@SEU_HOST/SEU_BANCO?sslmode=require
-```
+A configuração antiga de IA em variáveis `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_API_URL` e `LLM_DAILY_LIMIT` deixou de ser usada. Cadastre novamente os provedores no painel. As configurações de n8n, WAHA, WhatsApp e `INTERNAL_API_TOKEN` também deixaram de ser usadas; podem ser removidas do ambiente. Interrompa os serviços antigos caso ainda estejam rodando. Os workflows e serviços correspondentes foram retirados deste repositório.
 
-Use a URL fornecida pelo Neon, preservando seus parâmetros SSL. Nunca coloque essa URL em variáveis `NEXT_PUBLIC_*` ou no navegador.
+[PLANO.md](PLANO.md) fica como registro histórico: a arquitetura ali descrita foi substituída por esta versão.
 
-```bash
-npm run db:migrate
-npm run dev
-```
-
-A inicialização também aplica o schema idempotente. Não use `iniciar.sh` para testar o Neon, pois esse script isola os testes no banco local. Há um único proprietário no MVP. As tabelas `agenda_*` guardam entidades em JSONB, filas relacionais e os registros técnicos de deduplicação. As operações de escrita usam uma transação e bloqueiam o registro de metadados para serializar alterações desse único usuário.
-
-## Escolher a LLM depois
-
-Mantenha `none` até escolher uma API. Há dois adaptadores:
-
-```dotenv
-# API Gemini nativa
-LLM_PROVIDER=gemini
-LLM_API_KEY=SUA_CHAVE
-LLM_MODEL=MODELO_DISPONIVEL_NA_SUA_CONTA
-LLM_DAILY_LIMIT=100
-```
-
-```dotenv
-# Provedor com endpoint compatível com chat/completions
-LLM_PROVIDER=compatible
-LLM_API_URL=https://SEU_PROVEDOR/SEU_CAMINHO/chat/completions
-LLM_API_KEY=SUA_CHAVE
-LLM_MODEL=SEU_MODELO
-LLM_DAILY_LIMIT=100
-```
-
-Os comandos básicos e respostas objetivas não consomem IA. Pedidos não reconhecidos usam o provedor configurado. Há limite diário da aplicação, timeout, saída JSON validada e nenhuma troca automática de provedor. A gratuidade depende do modelo/plano escolhido: confirme a cota gratuita e deixe faturamento desativado no provedor se o objetivo continuar sendo R$ 0. Esse limite local não transforma uma API paga em gratuita.
-
-## n8n
-
-Os arquivos prontos para importar estão em [n8n/](n8n/):
-
-| Arquivo                       | Função                                                                                |
-| ----------------------------- | ------------------------------------------------------------------------------------- |
-| `01-processar-mensagens.json` | Webhook de aviso e agendamento a cada minuto; processa a fila até não haver trabalho. |
-| `02-entregar-respostas.json`  | A cada minuto, entrega respostas pendentes via WAHA.                                  |
-| `03-limpar-lixeira.json`      | A cada hora, exclui tarefas vencidas e limpa dados técnicos conforme retenção.        |
-
-1. Importe os três JSONs pelo menu **Import from file** do n8n.
-2. Crie uma credencial **Header Auth**, nome `AgendaMagno API`, com header `Authorization` e valor `Bearer SEU_INTERNAL_API_TOKEN` (valor do `.env`). Selecione-a no nó **Executar na API** de cada workflow.
-3. Crie outra credencial **Header Auth**, nome `AgendaMagno webhook`, com header `X-Agenda-Token` e valor de `N8N_WEBHOOK_TOKEN`. Selecione-a no nó **Mensagem recebida**.
-4. No nó **Configuração** de cada fluxo, ajuste `appUrl`: `http://app:3000` no Compose. Se ambos rodarem diretamente no mesmo computador, `http://localhost:3000`. Dentro de contêineres, `localhost` é o próprio contêiner.
-5. Salve e ative os três workflows. Configure `N8N_PROCESS_WEBHOOK_URL` com a URL de produção `/webhook/agendamagno-processar`.
-
-Os IDs de credencial nos JSONs são marcadores; precisam ser selecionados após importar. Não há segredos exportados. O script `npm run n8n:generate` regenera os arquivos-base, substituindo mudanças feitas neles.
-
-**Divisão do código:** o n8n coordena as filas e os agendamentos; a API concentra interpretação, validação, persistência e envio. Assim o simulador usa exatamente as mesmas regras do WhatsApp. Cada chamada de processamento reserva uma mensagem, interpreta e confirma a operação numa transação. Um webhook perdido é recuperado pelo agendamento; uma falha de envio não recria a tarefa. A resposta pode levar até cerca de um minuto para ser despachada pelo fluxo periódico, além do tempo de interpretação.
-
-## Docker local e WAHA
+## Docker local opcional
 
 ```bash
 npm run setup
-docker compose up --build -d app n8n
+docker compose up --build -d app
 ```
 
-Painel em `http://localhost:3000`; n8n em `http://localhost:5678`. Crie o usuário administrador do n8n e importe os workflows. Os dados internos do n8n usam seu volume próprio; não mantêm o Neon acordado. A sessão WAHA também tem volume separado.
-
-Quando tiver o número dedicado:
-
-1. Defina `WAHA_IMAGE` no `.env` com uma versão concreta compatível com sua máquina. O Compose tem `latest` apenas como fallback de desenvolvimento; fixe a versão antes do uso diário.
-2. Inicie `docker compose --profile whatsapp up -d`.
-3. Acesse a administração local do WAHA em `http://localhost:3001`, configure a sessão `default` e pareie o WhatsApp por QR.
-4. Defina `WHATSAPP_ALLOWED_CHAT_ID` com o identificador exato do remetente autorizado, conforme o evento WAHA. Não presuma o formato só a partir do número; ele pode ser `@c.us` ou `@lid`.
-5. Recrie a aplicação após mudar variáveis: `docker compose up -d --force-recreate app`.
-
-No Compose, os webhooks globais já apontam para `http://app:3000/api/waha`, com eventos `message,session.status`, assinatura SHA-512 e reentregas limitadas. Configuração equivalente por sessão está em [docs/waha-session.example.json](docs/waha-session.example.json). Configure **um** dos dois caminhos para evitar eventos duplicados desnecessários. API e administração ficam vinculadas a `127.0.0.1`; não exponha n8n/WAHA diretamente na internet. O WAHA é uma integração não oficial; o pareamento real ainda depende do número.
-
-Para hospedar depois, defina `APP_URL` com a URL HTTPS, configure proxy reverso/TLS e preserve os volumes. O cookie do painel passa a usar `Secure` com uma URL HTTPS. `N8N_SECURE_COOKIE=false` no Compose atende somente ao acesso HTTP local; ajuste para HTTPS ao publicar. Nenhum serviço foi contratado ou publicado por este projeto.
+Abra `http://localhost:3000`. Há somente o serviço `app`; o volume `app_data` preserva o banco local. Se o `.env` tiver `DATABASE_MODE=postgres`, o app usa o banco indicado em `DATABASE_URL`. A Vercel não usa esse Compose nem exige Docker.
 
 ## Estrutura e verificações
 
 ```text
-iniciar.sh                  Início rápido para testar localmente
-src/app/                    Página e API Next.js
-src/components/dashboard.tsx Painel, login e simulador
-src/lib/domain.ts           Regras de tarefas, contexto, lixeira e desfazer
-src/lib/db.ts               PostgreSQL/Neon e PGlite
-src/lib/schema.ts           Schema inicial idempotente
-src/lib/interpreter.ts      Comandos básicos e adaptadores de IA
-src/lib/service.ts          Filas, WAHA, processamento e limpeza
-n8n/                        Workflows importáveis
-tests/                      Testes de regras, integração e navegador
+iniciar.sh                    Início rápido para testar localmente
+src/app/                      Página, manifesto e API Next.js
+src/components/               Painel, conversa e configuração de IA
+src/lib/domain.ts             Regras de tarefas, contexto, lixeira e desfazer
+src/lib/db.ts                 PostgreSQL/Neon e PGlite
+src/lib/schema.ts             Schema idempotente
+src/lib/interpreter.ts        Comandos básicos e interpretação com IA
+src/lib/service.ts            Execução de ações e limpeza
+vercel.json                   Limpeza diária em produção
+tests/                        Testes de regras, integração e navegador
 ```
 
 ```bash
@@ -184,10 +185,6 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Os testes de integração usam PostgreSQL embutido em memória. Os testes de navegador usam banco temporário separado dos seus dados. Para usar um Chromium já instalado, informe `PLAYWRIGHT_CHROMIUM_EXECUTABLE` com seu caminho.
+Os testes de integração usam PostgreSQL embutido em memória. Os testes de navegador usam banco temporário separado dos seus dados. Para usar um Chromium já instalado, informe `PLAYWRIGHT_CHROMIUM_EXECUTABLE` com seu caminho. Testes com respostas simuladas de IA não comprovam qualidade de compreensão de um modelo nem disponibilidade ou saldo de uma API real.
 
-A implementação é testável localmente, mas a conexão real com Neon, o pareamento WAHA e a qualidade de uma LLM escolhida precisam ser validados com suas contas. A suíte não comprova a meta de 95% de compreensão de linguagem natural; isso depende do modelo futuro.
-
-Validação realizada: regras de domínio e integração com PGlite, ciclo completo no navegador (desktop/celular), proteção das rotas, build de produção e importação dos três workflows em n8n 2.39.6. Os testes não enviam mensagens reais.
-
-Backups: com o servidor local **parado**, copie `.data/local` para um local seguro. No Neon, use um backup PostgreSQL (`pg_dump`/`pg_restore`) antes de depender do sistema diariamente. Guarde também o `.env` e os volumes de n8n/WAHA em local protegido: a chave `N8N_ENCRYPTION_KEY` é necessária para recuperar credenciais. Backups têm retenção própria. Após restaurar, execute o workflow de limpeza antes de voltar ao uso. A restauração de um backup externo ainda precisa ser validada no ambiente escolhido.
+Backups: com o servidor local **parado**, copie `.data/local` para um local seguro. No Neon, mantenha backups PostgreSQL (`pg_dump`/`pg_restore`) conforme sua necessidade. Guarde também os segredos do ambiente, especialmente `LLM_ENCRYPTION_KEY`, em local protegido; ela é necessária para recuperar as chaves das APIs guardadas no banco. Backups têm retenção própria. A restauração deve ser validada no ambiente escolhido.

@@ -5,50 +5,10 @@ services:
     env_file: .env
     environment:
       HOSTNAME: 0.0.0.0
-      N8N_PROCESS_WEBHOOK_URL: http://n8n:5678/webhook/agendamagno-processar
-      WAHA_URL: http://waha:3000
       LOCAL_DATABASE_PATH: /app/.data/agenda
     ports:
       - '127.0.0.1:3000:3000'
     volumes:
       - app_data:/app/.data
-  n8n:
-    image: docker.n8n.io/n8nio/n8n:2.39.6
-    restart: unless-stopped
-    environment:
-      GENERIC_TIMEZONE: America/Bahia
-      TZ: America/Bahia
-      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?Execute npm run setup}
-      N8N_DIAGNOSTICS_ENABLED: 'false'
-      N8N_PERSONALIZATION_ENABLED: 'false'
-      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: 'true'
-      N8N_BLOCK_ENV_ACCESS_IN_NODE: 'true'
-      N8N_SECURE_COOKIE: 'false'
-      EXECUTIONS_DATA_PRUNE: 'true'
-      EXECUTIONS_DATA_MAX_AGE: '168'
-    ports:
-      - '127.0.0.1:5678:5678'
-    volumes:
-      - n8n_data:/home/node/.n8n
-      - ./n8n:/workflows:ro
-  waha:
-    profiles: [whatsapp]
-    image: ${WAHA_IMAGE:-devlikeapro/waha:latest}
-    restart: unless-stopped
-    environment:
-      WAHA_API_KEY: ${WAHA_API_KEY}
-      WHATSAPP_RESTART_ALL_SESSIONS: 'true'
-      WHATSAPP_HOOK_URL: http://app:3000/api/waha
-      WHATSAPP_HOOK_EVENTS: message,session.status
-      WHATSAPP_HOOK_HMAC_KEY: ${WAHA_WEBHOOK_SECRET}
-      WHATSAPP_HOOK_RETRIES_POLICY: linear
-      WHATSAPP_HOOK_RETRIES_DELAY_SECONDS: '2'
-      WHATSAPP_HOOK_RETRIES_ATTEMPTS: '4'
-    ports:
-      - '127.0.0.1:3001:3000'
-    volumes:
-      - waha_sessions:/app/.sessions
 volumes:
   app_data:
-  n8n_data:
-  waha_sessions:

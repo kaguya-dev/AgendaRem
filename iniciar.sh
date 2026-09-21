@@ -40,8 +40,8 @@ printf '\nAgendaMagno — ambiente local\n'
 printf 'Painel: %s\n' "$APP_URL"
 printf 'Senha: consulte PANEL_PASSWORD no arquivo %s/.env\n' "$agenda_dir"
 printf 'Dados locais: %s\n' "$LOCAL_DATABASE_PATH"
-printf 'Use “Testar conversa” no painel para experimentar comandos.\n'
-printf 'Neon, Docker, n8n e número de WhatsApp não são necessários para esse teste.\n'
+printf 'Use a conversa no painel para organizar sua agenda.\n'
+printf 'Cadastre suas APIs de IA pelo painel quando quiser usar linguagem natural.\n'
 printf 'Para encerrar: Ctrl+C. Seus dados serão preservados.\n\n'
 
 exec npm run dev -- --port "$agenda_port"

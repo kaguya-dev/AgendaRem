@@ -1,4 +1,6 @@
-# AgendaMagno — plano do organizador pessoal pelo WhatsApp
+# AgendaMagno — plano histórico do organizador pessoal
+
+> **Arquitetura substituída em 21/09/2026.** O sistema atual é um webapp Next.js com painel e conversa no navegador, hospedável na Vercel com PostgreSQL no Neon. n8n, WAHA e WhatsApp saíram da solução. Provedores de IA são cadastrados pelo frontend, com chaves criptografadas, prioridade, limites diários e troca automática quando um provedor estiver indisponível ou atingir sua cota. Tarefas, grupos e histórico existentes são preservados. Consulte o [README.md](README.md) para configuração e limites atuais. O restante deste arquivo fica como registro do planejamento anterior, não como instrução de implantação nem descrição da versão atual.
 
 Status: MVP implementado localmente; integrações externas aguardam configuração e validação.  
 Atualizado em: 17/09/2026.

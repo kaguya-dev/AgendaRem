@@ -51,8 +51,8 @@ export function authenticated(request: Request) {
     return false;
   }
 }
-export function internalAuth(request: Request) {
-  const expected = process.env.INTERNAL_API_TOKEN;
+export function cronAuth(request: Request) {
+  const expected = process.env.CRON_SECRET;
   if (
     !expected ||
     expected.length < 32 ||
@@ -67,11 +67,6 @@ export function sameOrigin(request: Request) {
     throw new DomainError('Origem da requisição não autorizada.', 403);
 }
 export function cookie(value: string, maxAge: number) {
-  const secure = (process.env.APP_URL ?? '').startsWith('https://');
+  const secure = process.env.VERCEL === '1' || (process.env.APP_URL ?? '').startsWith('https://');
   return `${COOKIE}=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
-}
-export function verifyWebhook(raw: string, signature: string | null) {
-  const key = process.env.WAHA_WEBHOOK_SECRET;
-  if (!key || key.length < 32 || !signature) return false;
-  return equal(createHmac('sha512', key).update(raw).digest('hex'), signature);
 }
