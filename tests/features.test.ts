@@ -17,6 +17,7 @@ import { nextDue } from '../src/backend/domain/recurrence';
 import { createDatabase, loadState } from '../src/backend/db';
 import { exportBackup, importBackup } from '../src/backend/backup';
 import { panelAction } from '../src/backend/service';
+import { migrationTarget } from '../scripts/migrate';
 const now = new Date('2026-09-22T15:00:00Z');
 const run = (s: State, commands: Command[], channel = 'panel') =>
   execute(s, commands, channel, now).state;
@@ -338,4 +339,34 @@ test('excluir grupo sem dizer o destino das tarefas pergunta e retoma com a resp
   assert.equal(feito.state.groups.length, 0);
   assert.ok(feito.state.tasks.every((t) => t.trashedAt && t.groupId === null));
   assert.match(feito.reply, /Grupo Estudos excluído\. 2 tarefa\(s\) na lixeira\./);
+});
+
+test('migração escolhe o banco pela intenção declarada, não pelo modo do .env', () => {
+  const admin =
+    'postgresql://admin:segredo@ep-exemplo.sa-east-1.aws.neon.tech/neondb?sslmode=require';
+  // O caso que motivou a precedência: .env de desenvolvimento com a URL de migração informada.
+  // Antes, isto preparava o banco embutido e anunciava sucesso, sem tocar no banco publicado.
+  const publicado = migrationTarget({
+    DATABASE_MODE: 'local',
+    DATABASE_MIGRATION_URL: admin,
+    LOCAL_DATABASE_PATH: '.data/agenda',
+  });
+  assert.equal(publicado.url, admin);
+  // O rótulo confirma onde foi aplicada, sem expor usuário nem senha.
+  assert.equal(publicado.label, 'ep-exemplo.sa-east-1.aws.neon.tech/neondb');
+  assert.ok(!publicado.label.includes('segredo'));
+  assert.ok(!publicado.label.includes('admin'));
+
+  // Sem a URL de migração, o modo manda: local prepara o banco embutido.
+  const local = migrationTarget({ DATABASE_MODE: 'local', DATABASE_URL: admin });
+  assert.equal(local.url, undefined);
+  assert.match(local.label, /banco local em \.data\/agenda/);
+
+  // Em postgres, a conexão do app serve se nenhuma administrativa for informada.
+  assert.equal(migrationTarget({ DATABASE_MODE: 'postgres', DATABASE_URL: admin }).url, admin);
+  // E sem nenhuma conexão, a falta é dita antes de qualquer tentativa.
+  assert.throws(
+    () => migrationTarget({ DATABASE_MODE: 'postgres' }),
+    /Falta a conexão de migração/,
+  );
 });

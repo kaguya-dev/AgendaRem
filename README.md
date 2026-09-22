@@ -64,7 +64,7 @@ Nenhuma dessas variáveis usa prefixo `NEXT_PUBLIC_`. As chaves dos provedores d
 
 Para usar **Preview**, configure também suas variáveis nesse ambiente. Use um banco ou branch Neon de testes e `APP_URL` com a origem exata daquele preview; não reutilize a origem de produção. Alterações de variáveis exigem novo deploy. As mutações só aceitam pedidos vindos de uma origem conhecida, o que barra requisições de outros sites. São aceitos o `APP_URL` e, quando publicado na Vercel, os endereços que a própria plataforma dá ao app: o domínio de produção, o do deployment e o da branch. Isso evita a recusa ao abrir justamente pelo link que o painel da Vercel entrega. Qualquer outro domínio — inclusive um domínio próprio — exige ajustar `APP_URL`, e a recusa passa a dizer quais endereços são aceitos.
 
-No banco local, o schema é aplicado automaticamente a cada início. **Em PostgreSQL não é**: o app publicado nunca cria tabelas, a menos que `DATABASE_AUTO_MIGRATE=true`, o que não é recomendado. Sem a migração, o primeiro acesso falha já no login — ele grava sessão, limite de tentativas e configuração de segurança —, com a mensagem de que as tabelas ainda não existem. Migrações são separadas do aplicativo. Configure `DATABASE_MODE=postgres` e `DATABASE_MIGRATION_URL` com a conexão administrativa na máquina/CI de migração, então execute:
+No banco local, o schema é aplicado automaticamente a cada início. **Em PostgreSQL não é**: o app publicado nunca cria tabelas, a menos que `DATABASE_AUTO_MIGRATE=true`, o que não é recomendado. Sem a migração, o primeiro acesso falha já no login — ele grava sessão, limite de tentativas e configuração de segurança —, com a mensagem de que as tabelas ainda não existem. Migrações são separadas do aplicativo. Informe `DATABASE_MIGRATION_URL` com a conexão administrativa na máquina ou CI de migração e execute o comando abaixo. Essa variável tem precedência sobre `DATABASE_MODE`: um `.env` de desenvolvimento em modo local não desvia a migração para o banco embutido. O comando informa em qual banco o schema foi aplicado — host e nome, sem usuário nem senha —, então dá para conferir que foi no banco pretendido:
 
 ```bash
 npm run db:migrate
@@ -259,7 +259,7 @@ Na Vercel, o limite de tentativas considera o IP informado pela plataforma, usan
 
 A conexão de execução deve ter somente `SELECT`, `INSERT`, `UPDATE` e `DELETE` nas tabelas da aplicação, além de `USAGE` no schema. Ela não deve ser dona das tabelas/banco, ter privilégios administrativos ou permissão `CREATE` no schema. O aplicativo não executa DDL automaticamente em PostgreSQL; `DATABASE_AUTO_MIGRATE=true` existe apenas como opção explícita de compatibilidade, sem separação de privilégios.
 
-1. Em uma máquina/CI administrativa, defina `DATABASE_MIGRATION_URL` e execute `npm run db:migrate`. Sem ela, o script utiliza `DATABASE_URL`.
+1. Em uma máquina/CI administrativa, defina `DATABASE_MIGRATION_URL` e execute `npm run db:migrate`. Ela prevalece sobre `DATABASE_MODE`; sem ela, e fora do modo local, o script utiliza `DATABASE_URL`.
 2. Execute [scripts/runtime-role.sql](scripts/runtime-role.sql) com a conexão administrativa para criar o grupo de permissões `agenda_runtime` (uma vez).
 3. Crie um login dedicado sem permissões administrativas e conceda a ele `agenda_runtime`. Não use como login da aplicação um proprietário ou uma conta que herde permissões administrativas.
 4. Configure somente a URL restrita em `DATABASE_URL` na Vercel. A credencial de migração deve ficar fora do ambiente do aplicativo. Mantenha `DATABASE_AUTO_MIGRATE=false`.
