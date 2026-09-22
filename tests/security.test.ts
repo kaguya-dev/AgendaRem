@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { createDatabase, loadState, type Database } from '../src/backend/db';
 import { login, session, revokeSession, updateAccess, accessInfo } from '../src/backend/access';
 import { totp, verifyTotp } from '../src/backend/totp';
-import { verifyPassword } from '../src/backend/auth';
+import { allowedOrigins, sameOrigin, verifyPassword } from '../src/backend/auth';
 import { panelAction } from '../src/backend/service';
 import { GET, POST } from '../src/app/api/[...path]/route';
 let database: Database;
@@ -266,5 +266,48 @@ test('falha de banco na API diz o que conferir em vez de um aviso genérico', as
     assert.ok(!desconhecido.includes('detalhe interno'), desconhecido);
   } finally {
     globals.agendaDb = real;
+  }
+});
+
+test('origem aceita o APP_URL e os endereços que a própria Vercel entrega, e nada além', () => {
+  const salvo = { ...process.env };
+  const pedido = (origin: string) => new Request('https://x/api/login', { headers: { origin } });
+  try {
+    process.env.APP_URL = 'https://agenda.vercel.app';
+    delete process.env.VERCEL;
+    assert.doesNotThrow(() => sameOrigin(pedido('https://agenda.vercel.app')));
+    assert.throws(() => sameOrigin(pedido('https://agenda-abc123.vercel.app')), /não autorizada/);
+
+    // Publicado, o endereço próprio do deployment também vale: é o mesmo app, e é o link que
+    // o painel da plataforma entrega.
+    process.env.VERCEL = '1';
+    process.env.VERCEL_URL = 'agenda-abc123.vercel.app';
+    process.env.VERCEL_PROJECT_PRODUCTION_URL = 'agenda.vercel.app';
+    for (const origin of ['https://agenda.vercel.app', 'https://agenda-abc123.vercel.app'])
+      assert.doesNotThrow(() => sameOrigin(pedido(origin)), origin);
+    // Terceiros continuam barrados, inclusive quem imita o domínio.
+    for (const origin of [
+      'https://agenda.vercel.app.invasor.com',
+      'http://agenda.vercel.app',
+      'https://outro.vercel.app',
+    ])
+      assert.throws(() => sameOrigin(pedido(origin)), /não autorizada/, origin);
+    // Sem cabeçalho de origem também é recusa.
+    assert.throws(() => sameOrigin(new Request('https://x/api/login')), /não autorizada/);
+
+    // A mensagem diz por onde entrar, em vez de só recusar.
+    delete process.env.VERCEL;
+    delete process.env.VERCEL_URL;
+    delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+    assert.throws(() => sameOrigin(pedido('https://errado.com')), /agenda\.vercel\.app/);
+    // APP_URL ausente ou inválida cai no endereço local, sem aceitar qualquer origem.
+    for (const valor of [undefined, 'não é url']) {
+      if (valor === undefined) delete process.env.APP_URL;
+      else process.env.APP_URL = valor;
+      assert.deepEqual(allowedOrigins(), ['http://localhost:3000']);
+      assert.throws(() => sameOrigin(pedido('https://errado.com')), /não autorizada/);
+    }
+  } finally {
+    process.env = salvo;
   }
 });
