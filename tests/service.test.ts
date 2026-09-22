@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createDatabase, db, loadState, type Database } from '../src/backend/db';
 import { chat, cleanup, panelAction, snapshot, startChat } from '../src/backend/service';
 import { cronAuth, sameOrigin, cookie } from '../src/backend/auth';
-import type { Command } from '../src/backend/domain';
+import { DomainError, type Command } from '../src/backend/domain';
 
 let database: Database;
 before(async () => {
@@ -157,7 +157,17 @@ test('Vercel bloqueia banco local efêmero e usa cookie Secure', () => {
   process.env.VERCEL = '1';
   process.env.DATABASE_MODE = 'local';
   try {
-    assert.throws(() => db(), /Na Vercel/);
+    // DomainError, não falha interna: a mensagem precisa chegar à tela para ser corrigida.
+    assert.throws(
+      () => db(),
+      (error: unknown) => {
+        assert.ok(error instanceof DomainError);
+        assert.equal(error.status, 503);
+        assert.match(error.message, /disco da função é descartado/);
+        assert.match(error.message, /DATABASE_MODE=postgres e DATABASE_URL/);
+        return true;
+      },
+    );
     assert.match(cookie('token', 60), /; Secure/);
   } finally {
     if (oldVercel === undefined) delete process.env.VERCEL;

@@ -311,3 +311,42 @@ test('origem aceita o APP_URL e os endereços que a própria Vercel entrega, e n
     process.env = salvo;
   }
 });
+
+test('configuração de banco ausente explica o que falta, em vez do aviso genérico', async () => {
+  const real = globals.agendaDb;
+  const modo = process.env.DATABASE_MODE;
+  const url = process.env.DATABASE_URL;
+  const vercel = process.env.VERCEL;
+  const erro = async () => {
+    // Sem conexão em cache, a rota reavalia a configuração do ambiente.
+    delete globals.agendaDb;
+    const resposta = await call('login', { password });
+    return { status: resposta.status, texto: (await resposta.json()).error as string };
+  };
+  try {
+    // Publicado com o banco embutido: o disco da função não guarda nada.
+    process.env.VERCEL = '1';
+    process.env.DATABASE_MODE = 'local';
+    const embutido = await erro();
+    assert.equal(embutido.status, 503);
+    assert.match(embutido.texto, /disco da função é descartado/);
+    assert.match(embutido.texto, /DATABASE_MODE=postgres e DATABASE_URL/);
+
+    // Modo postgres sem a URL: é o que mais acontece no primeiro deploy.
+    process.env.DATABASE_MODE = 'postgres';
+    delete process.env.DATABASE_URL;
+    const semUrl = await erro();
+    assert.equal(semUrl.status, 503);
+    assert.match(semUrl.texto, /Falta a conexão com o banco/);
+    assert.match(semUrl.texto, /DATABASE_URL com a URL do Neon/);
+    assert.doesNotMatch(semUrl.texto, /Verifique a configuração e a conexão/);
+  } finally {
+    if (modo === undefined) delete process.env.DATABASE_MODE;
+    else process.env.DATABASE_MODE = modo;
+    if (url === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = url;
+    if (vercel === undefined) delete process.env.VERCEL;
+    else process.env.VERCEL = vercel;
+    globals.agendaDb = real;
+  }
+});

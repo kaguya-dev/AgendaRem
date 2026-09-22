@@ -2,7 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { Pool } from 'pg';
 import { PGlite } from '@electric-sql/pglite';
 import { schema, featureMigration } from './schema';
-import { emptyState, type State } from './domain';
+import { DomainError, emptyState, type State } from './domain';
 
 export interface Sql {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<{ rows: T[] }>;
@@ -67,10 +67,18 @@ const globalDb = globalThis as unknown as {
 };
 export function db(): Promise<Database> {
   if (!globalDb.agendaDb) {
+    // Erro comum, não falha interna: estas duas mensagens explicam o que configurar, e como
+    // DomainError elas chegam à tela em vez de virarem um "verifique a configuração" genérico.
     if (process.env.VERCEL === '1' && process.env.DATABASE_MODE === 'local')
-      throw new Error('Na Vercel, configure DATABASE_MODE=postgres e DATABASE_URL do Neon.');
+      throw new DomainError(
+        'O banco embutido não funciona no app publicado: o disco da função é descartado a cada execução. Nas variáveis do projeto, configure DATABASE_MODE=postgres e DATABASE_URL com a conexão do Neon, e publique de novo.',
+        503,
+      );
     if (process.env.DATABASE_MODE !== 'local' && !process.env.DATABASE_URL)
-      throw new Error('Configure DATABASE_URL (Neon) ou DATABASE_MODE=local no .env.');
+      throw new DomainError(
+        'Falta a conexão com o banco. Configure DATABASE_URL com a URL do Neon, que já inclui usuário e senha, ou DATABASE_MODE=local para usar o banco embutido em desenvolvimento.',
+        503,
+      );
     globalDb.agendaDb = createDatabase(
       process.env.DATABASE_MODE === 'local' ? undefined : process.env.DATABASE_URL,
       process.env.LOCAL_DATABASE_PATH ?? '.data/agenda',
