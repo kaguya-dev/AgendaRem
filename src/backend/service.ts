@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { db, loadState, saveState, lock, type Database, type Sql } from './db';
-import { DomainError, execute, purge } from './domain';
+import { DomainError, execute, purge, UNSUPPORTED } from './domain';
 import { interpret } from './interpreter';
-import { listProviders } from './llm';
+import { generateReply, listProviders } from './llm';
 
 interface Message {
   id: string;
@@ -38,6 +38,7 @@ async function trimLogs(tx: Sql, now: Date) {
     [cutoff],
   );
   await tx.query('DELETE FROM agenda_limits WHERE expires_at<$1', [now.toISOString()]);
+  await tx.query('DELETE FROM agenda_sessions WHERE expires_at<$1', [now.toISOString()]);
 }
 export async function snapshot(database?: Database) {
   const connection = database ?? (await db());
@@ -48,7 +49,7 @@ export async function snapshot(database?: Database) {
     await trimLogs(tx, new Date());
     const messages = (
       await tx.query(
-        `SELECT id,channel,body,reply,status,error,created_at FROM agenda_messages
+        `SELECT id,channel,CASE WHEN channel='web' THEN body ELSE NULL END AS body,reply,status,error,created_at FROM agenda_messages
          WHERE channel IN ('web','panel') AND (body IS NOT NULL OR reply IS NOT NULL)
          ORDER BY received_at DESC,id DESC LIMIT 50`,
       )
@@ -57,7 +58,11 @@ export async function snapshot(database?: Database) {
       tasks: state.tasks,
       groups: state.groups,
       history: state.history,
-      settings: { retentionDays: state.settings.retentionDays },
+      settings: {
+        retentionDays: state.settings.retentionDays,
+        revision: state.settings.revision,
+        naturalReply: state.settings.naturalReply !== false,
+      },
       messages,
       storage: process.env.DATABASE_MODE === 'local' ? 'local' : 'neon',
     };
@@ -74,18 +79,23 @@ export async function panelAction(commands: unknown, requestId: string, database
         `panel:${requestId}`,
       ])
     ).rows[0];
-    if (prior) return { reply: prior.reply, clarification: prior.status === 'clarification' };
+    if (prior) {
+      if (prior.body !== null && prior.body !== JSON.stringify(commands))
+        throw new DomainError('Este pedido já foi usado para outra ação.', 409);
+      return { reply: prior.reply, clarification: prior.status === 'clarification' };
+    }
     const { state: before } = await currentState(tx);
     const result = execute(before, commands, 'panel');
     await saveState(tx, before, result.state);
     await tx.query(
-      'INSERT INTO agenda_messages(id,external_id,channel,reply,status) VALUES($1,$2,$3,$4,$5)',
+      'INSERT INTO agenda_messages(id,external_id,channel,reply,status,body) VALUES($1,$2,$3,$4,$5,$6)',
       [
         randomUUID(),
         `panel:${requestId}`,
         'panel',
         result.reply,
         result.clarification ? 'clarification' : 'done',
+        JSON.stringify(commands),
       ],
     );
     return { reply: result.reply, clarification: result.clarification };
@@ -95,6 +105,24 @@ function response(message: Message) {
   return { id: message.id, reply: message.reply, status: message.status, error: message.error };
 }
 
+// Segunda passagem pela IA: o executor já produziu a resposta e as alterações já foram
+// gravadas. Aqui só a redação muda, e apenas se a versão reescrita preservar cada linha de
+// tarefa — ver llm/reply.ts. Qualquer falha devolve a resposta original: uma alteração
+// confirmada nunca pode ser perdida por causa do acabamento do texto.
+async function polish(
+  reply: string,
+  request: string,
+  enabled: boolean,
+  connection: Database,
+  rewrite: typeof generateReply,
+) {
+  if (!enabled || !reply.trim() || reply.startsWith(UNSUPPORTED)) return reply;
+  try {
+    return (await rewrite(reply, request, connection)) ?? reply;
+  } catch {
+    return reply;
+  }
+}
 // The HTTP request owns its work: no worker, webhook or long-running server is required.
 // The result and mutations commit together, so repeating a request never repeats its actions.
 export async function chat(
@@ -102,6 +130,7 @@ export async function chat(
   requestId: string,
   database?: Database,
   interpreter = interpret,
+  rewrite = generateReply,
 ) {
   const connection = database ?? (await db());
   const token = randomUUID();
@@ -147,6 +176,10 @@ export async function chat(
   });
   if (claimed.prior) return response(claimed.prior);
   const { message, state } = claimed;
+  // Depois que esta transação confirma, o pedido está feito. O que vem a seguir é redação, e
+  // fica fora do try justamente para que nada ali possa devolver "falhou" para um trabalho que
+  // já foi gravado.
+  let committed: { id: string; status: string; reply: string; natural: boolean };
   try {
     const commands = await interpreter(
       state,
@@ -155,7 +188,7 @@ export async function chat(
       new Date(message.created_at),
       connection,
     );
-    return await connection.transaction(async (tx) => {
+    committed = await connection.transaction(async (tx) => {
       await lock(tx);
       const active = await tx.query(
         "SELECT id FROM agenda_messages WHERE id=$1 AND status='processing' AND lease_token=$2 AND lease_until>=now()",
@@ -175,7 +208,12 @@ export async function chat(
         'UPDATE agenda_messages SET status=$2,reply=$3,error=NULL,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1',
         [message.id, status, result.reply],
       );
-      return { id: message.id, status, reply: result.reply, error: null };
+      return {
+        id: message.id,
+        status,
+        reply: result.reply,
+        natural: result.state.settings.naturalReply !== false,
+      };
     });
   } catch (error) {
     const safe =
@@ -189,6 +227,19 @@ export async function chat(
     );
     return { id: message.id, status: 'failed', reply: null, error: safe };
   }
+  // Fora da transação de propósito: é uma chamada de rede, e prender a linha da agenda durante
+  // ela bloquearia qualquer outra escrita pelo tempo da resposta do provedor.
+  const reply = await polish(committed.reply, text, committed.natural, connection, rewrite);
+  if (reply !== committed.reply)
+    await connection
+      .query('UPDATE agenda_messages SET reply=$2,updated_at=now() WHERE id=$1', [
+        committed.id,
+        reply,
+      ])
+      // A resposta já foi entregue; o histórico guardar a versão original é uma diferença de
+      // redação, não de conteúdo.
+      .catch(() => {});
+  return { id: committed.id, status: committed.status, reply, error: null };
 }
 export async function clearChat(database?: Database) {
   const connection = database ?? (await db());

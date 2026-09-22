@@ -23,6 +23,9 @@ export const due = (t: Task) =>
     ? 'Sem prazo'
     : `${t.dueDate === today() ? 'Hoje' : t.dueDate.split('-').slice(1).reverse().join('/') + (t.dueDate.slice(0, 4) !== today().slice(0, 4) ? '/' + t.dueDate.slice(0, 4) : '')}${t.dueTime ? ` · ${t.dueTime}` : ''}`;
 export const labels: Record<string, string> = {
+  assistant: 'Assistente',
+  calendar: 'Calendário',
+  archived: 'Grupos arquivados',
   all: 'Todas as tarefas',
   inbox: 'Caixa de entrada',
   today: 'Hoje',

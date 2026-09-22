@@ -1,3 +1,11 @@
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+  }
+}
 export async function api<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(`/api/${path}`, {
     method: body === undefined ? 'GET' : 'POST',
@@ -8,7 +16,7 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
   if (!response.ok) {
     if (response.status === 401 && path !== 'login')
       window.dispatchEvent(new Event('agenda:logout'));
-    throw new Error(result.error ?? 'Não foi possível concluir.');
+    throw new ApiError(result.error ?? 'Não foi possível concluir.', response.status);
   }
   return result;
 }

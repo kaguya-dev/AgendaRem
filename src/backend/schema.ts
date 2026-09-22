@@ -39,3 +39,16 @@ CREATE TABLE IF NOT EXISTS agenda_llm_usage (
 );
 ${usageDetailsMigration};
 `;
+
+export const featureMigration = `
+CREATE TABLE IF NOT EXISTS agenda_security (id integer PRIMARY KEY CHECK(id=1), data jsonb NOT NULL DEFAULT '{}');
+INSERT INTO agenda_security(id) VALUES(1) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS agenda_sessions (
+  id text PRIMARY KEY, token_hash text UNIQUE NOT NULL, label text NOT NULL,
+  trusted boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL, last_seen timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS agenda_sessions_expiry ON agenda_sessions(expires_at);
+UPDATE agenda_tasks SET data=data || '{"trashedAt":null,"purgeAt":null,"trashReason":null}'::jsonb
+ WHERE data->>'status'='completed' AND data->>'trashReason'='completed';
+`;

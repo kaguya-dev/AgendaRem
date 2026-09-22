@@ -734,3 +734,51 @@ test('migração preserva contadores antigos e identifica que não são consumo 
   assert.equal(saved.reportedTokensToday, 10);
   assert.equal(saved.estimatedTokensToday, 0);
 });
+
+test('erro da API aponta a causa pelo código estruturado, sem repetir o texto do provedor', async () => {
+  const casos = [
+    {
+      // Endereço base em vez do endpoint completo: a recusa mais comum ao cadastrar uma API.
+      status: 404,
+      body: {
+        error: {
+          message: 'Unknown request URL: POST /openai/v1. Please check the URL for typos.',
+          type: 'invalid_request_error',
+          code: 'unknown_url',
+        },
+      },
+      espera: [/endpoint completo de Chat Completions/, /código unknown_url/],
+    },
+    {
+      status: 400,
+      body: { error: { message: 'segredo da pessoa no texto', code: 'model_not_found' } },
+      espera: [/aceita resposta em JSON/, /código model_not_found/],
+    },
+    {
+      // Gemini usa outro nome para o mesmo campo.
+      status: 403,
+      body: { error: { message: 'detalhe extenso', status: 'PERMISSION_DENIED' } },
+      espera: [/Chave inválida ou sem permissão/, /código PERMISSION_DENIED/],
+    },
+    {
+      // Uma frase no lugar do código não atravessa: só identificadores curtos passam.
+      status: 400,
+      body: { error: { code: 'a mensagem inteira da pessoa vazando por aqui' } },
+      espera: [/aceita resposta em JSON/],
+    },
+  ];
+  for (const caso of casos) {
+    const provider = (await saveProvider(config(), database)).providers[0];
+    await assert.rejects(
+      generateCommands('system', 'message', database, {
+        fetch: async () => Response.json(caso.body, { status: caso.status }),
+      }),
+    );
+    const erro = (await listProviders(database)).providers[0].lastError!;
+    for (const padrao of caso.espera) assert.match(erro, padrao, `${caso.status}: ${erro}`);
+    assert.ok(!erro.includes('segredo da pessoa'), erro);
+    assert.ok(!erro.includes('Please check the URL'), erro);
+    assert.ok(!erro.includes('vazando por aqui'), erro);
+    await deleteProvider(provider.id, database);
+  }
+});

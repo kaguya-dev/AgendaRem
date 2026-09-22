@@ -17,7 +17,7 @@ if (existsSync('.env')) {
   }
 } else {
   let env = readFileSync('.env.example', 'utf8');
-  for (const key of ['PANEL_PASSWORD', 'SESSION_SECRET', 'LLM_ENCRYPTION_KEY', 'CRON_SECRET']) {
+  for (const key of ['PANEL_PASSWORD', 'LLM_ENCRYPTION_KEY', 'CRON_SECRET']) {
     env = env.replace(new RegExp(`^${key}=$`, 'm'), `${key}=${randomBytes(32).toString('hex')}`);
   }
   writeFileSync('.env', env, { mode: 0o600 });

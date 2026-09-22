@@ -49,11 +49,12 @@ test('cria grupo e pequenas listas atomicamente, preserva Caixa de entrada', () 
   );
   assert.deepEqual(state, original);
 });
-test('finalizar move à lixeira e repetir não altera retenção nem versão', () => {
+test('finalizar preserva fora da lixeira e repetir não altera versão', () => {
   let state = run(task(), [{ op: 'complete_task', task: '#1' }]);
   const completed = structuredClone(state.tasks[0]);
   assert.equal(completed.status, 'completed');
-  assert.equal(completed.purgeAt, '2026-10-16T15:00:00.000Z');
+  assert.equal(completed.purgeAt, null);
+  assert.equal(completed.trashedAt, null);
   state = run(
     state,
     [{ op: 'complete_task', task: '#1' }],
@@ -66,7 +67,7 @@ test('finalizar move à lixeira e repetir não altera retenção nem versão', (
 });
 test('mudança da retenção só afeta entradas futuras; restauração preserva campos', () => {
   let state = run(task(), [
-    { op: 'complete_task', task: '#1' },
+    { op: 'trash_task', task: '#1' },
     { op: 'set_retention', days: 7 },
   ]);
   assert.equal(state.tasks[0].purgeAt, '2026-10-16T15:00:00.000Z');
@@ -75,7 +76,7 @@ test('mudança da retenção só afeta entradas futuras; restauração preserva 
   assert.equal(state.tasks[0].priority, 'high');
   assert.equal(state.tasks[0].status, 'pending');
   assert.equal(state.tasks[0].purgeAt, null);
-  state = run(state, [{ op: 'complete_task', task: '#1' }]);
+  state = run(state, [{ op: 'trash_task', task: '#1' }]);
   assert.equal(state.tasks[0].purgeAt, '2026-09-23T15:00:00.000Z');
 });
 test('descartar não conclui, restaurar marca pendente', () => {
@@ -185,7 +186,7 @@ test('desfazer não pula configuração e expira em 24h', () => {
 test('limpeza preserva restauradas e remove conteúdo do histórico e da reversão', () => {
   let state = run(task(), [
     { op: 'create_task', title: 'Restaurada' },
-    { op: 'complete_task', task: '#1' },
+    { op: 'trash_task', task: '#1' },
     { op: 'trash_task', task: '#2' },
   ]);
   const early = purge(state, new Date('2026-10-16T14:59:59Z'));
@@ -227,7 +228,7 @@ test('paginação informa total e continuação; referências usam última lista
   assert.match(second.reply, /Página 2\/2/);
   assert.equal(second.state.conversations[0].taskIds.length, 2);
 });
-test('validação rejeita datas inexistentes, retenção inválida e mais de 10 ações', () => {
+test('validação rejeita datas inexistentes, retenção inválida e mais de 100 ações no painel', () => {
   assert.throws(() =>
     run(emptyState(), [{ op: 'create_task', title: 'Inválida', dueDate: '2026-02-30' }]),
   );
@@ -235,7 +236,7 @@ test('validação rejeita datas inexistentes, retenção inválida e mais de 10 
   assert.throws(() =>
     run(
       emptyState(),
-      Array.from({ length: 11 }, () => ({ op: 'create_task', title: 'A' })),
+      Array.from({ length: 101 }, () => ({ op: 'create_task', title: 'A' })),
     ),
   );
   assert.throws(

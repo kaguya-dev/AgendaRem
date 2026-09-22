@@ -1,13 +1,14 @@
 import { z } from 'zod';
+import { cookie, cronAuth, sameOrigin } from '@/backend/auth';
 import {
-  authenticated,
-  cookie,
-  cronAuth,
-  sameOrigin,
-  sessionToken,
-  verifyPassword,
-} from '@/backend/auth';
-import { db, consumeLimit } from '@/backend/db';
+  session,
+  login,
+  accessInfo,
+  updateAccess,
+  revokeSession,
+  reauthenticate,
+} from '@/backend/access';
+import { exportBackup, importBackup } from '@/backend/backup';
 import { DomainError } from '@/backend/domain';
 import { chat, cleanup, clearChat, panelAction, snapshot } from '@/backend/service';
 import { deleteProvider, listProviders, resetProvider, saveProvider } from '@/backend/llm';
@@ -17,41 +18,78 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 const reply = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
   Response.json(data, { status, headers: { 'Cache-Control': 'no-store', ...headers } });
-async function read(request: Request) {
-  if (Number(request.headers.get('content-length') ?? 0) > 65536)
+async function read(request: Request, maximum = 65536) {
+  if (Number(request.headers.get('content-length') ?? 0) > maximum)
     throw new DomainError('Requisição muito grande.', 413);
-  const raw = await request.text();
-  if (Buffer.byteLength(raw) > 65536) throw new DomainError('Requisição muito grande.', 413);
-  return raw;
+  if (!request.body) return '';
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maximum) {
+        await reader.cancel();
+        throw new DomainError('Requisição muito grande.', 413);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 async function handler(request: Request, context: { params: Promise<{ path: string[] }> }) {
   try {
     const path = (await context.params).path.join('/');
     const method = request.method;
     if (path === 'health' && method === 'GET') return reply({ ok: true });
-    if (path === 'auth' && method === 'GET')
-      return reply({ authenticated: authenticated(request) });
+    if (path === 'auth' && method === 'GET') {
+      const current = await session(request);
+      return reply({
+        authenticated: Boolean(current),
+        trusted: current?.trusted ?? false,
+        expiresAt: current?.expires_at ?? null,
+      });
+    }
     if (path === 'cron/cleanup' && method === 'GET') {
       cronAuth(request);
       return reply(await cleanup());
     }
     if (path === 'login' && method === 'POST') {
       sameOrigin(request);
-      const body = z
-        .object({ password: z.string().min(1).max(256) })
-        .parse(JSON.parse(await read(request)));
-      if (!(await consumeLimit(await db(), 'panel-login', 15, 15 * 60000)))
-        throw new DomainError('Muitas tentativas. Aguarde 15 minutos.', 429);
-      if (!verifyPassword(body.password)) throw new DomainError('Senha incorreta.', 401);
-      return reply({ ok: true }, 200, { 'Set-Cookie': cookie(sessionToken(), 7 * 86400) });
+      const result = await login(request, JSON.parse(await read(request)));
+      return reply(
+        { ok: !result.needsCode, needsCode: result.needsCode, expiresAt: result.expiresAt },
+        200,
+        result.cookie ? { 'Set-Cookie': result.cookie } : {},
+      );
     }
-    if (!authenticated(request)) throw new DomainError('Entre para continuar.', 401);
+    const current = await session(request);
+    if (!current) throw new DomainError('Entre para continuar.', 401);
+    if (method === 'GET' && path === 'security') return reply(await accessInfo(current));
+    if (method === 'GET' && path === 'backup') return reply(await exportBackup());
     if (method === 'GET' && path === 'state') return reply(await snapshot());
     if (method === 'GET' && path === 'llm-providers') return reply(await listProviders());
     if (method !== 'POST') throw new DomainError('Rota não encontrada.', 404);
     sameOrigin(request);
-    if (path === 'logout') return reply({ ok: true }, 200, { 'Set-Cookie': cookie('', 0) });
-    const body = JSON.parse(await read(request));
+    if (path === 'logout') {
+      await revokeSession(current.id);
+      return reply({ ok: true }, 200, { 'Set-Cookie': cookie('', 0) });
+    }
+    const body = JSON.parse(
+      await read(request, path === 'backup/import' ? 2 * 1024 * 1024 : 65536),
+    );
+    if (path === 'security') return reply(await updateAccess(current, body));
+    if (path === 'backup/import') {
+      const value = z
+        .object({ backup: z.unknown(), expectedRevision: z.number().int().nonnegative() })
+        .parse(body);
+      await reauthenticate(current, body);
+      return reply(await importBackup(value.backup, value.expectedRevision));
+    }
     if (path === 'actions') {
       const value = z.object({ commands: z.unknown(), requestId: z.string().uuid() }).parse(body);
       return reply(await panelAction(value.commands, value.requestId));

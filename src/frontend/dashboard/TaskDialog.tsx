@@ -28,8 +28,17 @@ export function TaskDialog({
   const [description, setDescription] = useState(task?.description ?? '');
   const [group, setGroup] = useState(task?.groupId ?? defaultGroup ?? '');
   const [priority, setPriority] = useState(task?.priority ?? 'normal');
-  const [status, setStatus] = useState<'pending' | 'in_progress'>(
-    task?.status === 'in_progress' ? 'in_progress' : 'pending',
+  const [status, setStatus] = useState<'pending' | 'in_progress' | 'completed'>(
+    task?.status ?? 'pending',
+  );
+  const [tags, setTags] = useState(task?.tags?.join(', ') ?? '');
+  const [checklist, setChecklist] = useState(task?.checklist ?? []);
+  const [step, setStep] = useState('');
+  const [frequency, setFrequency] = useState(task?.recurrence?.frequency ?? 'none');
+  const [interval, setIntervalValue] = useState(task?.recurrence?.interval ?? 1);
+  const [weekdays, setWeekdays] = useState<number[]>(task?.recurrence?.weekdays ?? []);
+  const [reminder, setReminder] = useState(
+    task?.reminderMinutes == null ? '' : String(task.reminderMinutes),
   );
   const [date, setDate] = useState(task?.dueDate ?? '');
   const [time, setTime] = useState(task?.dueTime ?? '');
@@ -43,9 +52,26 @@ export function TaskDialog({
         description,
         group: group || null,
         priority,
-        status,
+        ...(status !== 'completed' ? { status } : {}),
         dueDate: date || null,
         dueTime: date && time ? time : null,
+        tags: tags
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
+        checklist,
+        recurrence:
+          frequency === 'none'
+            ? null
+            : {
+                frequency: frequency as 'daily' | 'weekly' | 'monthly',
+                interval,
+                ...(frequency === 'weekly' ? { weekdays } : {}),
+                ...(frequency === 'monthly' && task?.dueDate === date && task?.recurrence?.monthDay
+                  ? { monthDay: task.recurrence.monthDay }
+                  : {}),
+              },
+        reminderMinutes: reminder === '' ? null : Number(reminder),
       },
     ]);
   }
@@ -87,11 +113,13 @@ export function TaskDialog({
               <label htmlFor="task-group">Grupo</label>
               <select id="task-group" value={group} onChange={(e) => setGroup(e.target.value)}>
                 <option value="">Caixa de entrada</option>
-                {groups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
+                {groups
+                  .filter((g) => !g.archivedAt || g.id === task?.groupId)
+                  .map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
               </select>
             </div>
             <div>
@@ -138,7 +166,154 @@ export function TaskDialog({
             <option value="in_progress">Em andamento</option>
             {task?.status === 'completed' && <option value="completed">Concluída</option>}
           </select>
-          <p className="field-help">Horários de Brasília · Definir prazo não cria um lembrete.</p>
+          <label htmlFor="task-tags">Etiquetas separadas por vírgula</label>
+          <input
+            id="task-tags"
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+            placeholder="estudo, pessoal, urgente"
+            maxLength={800}
+          />
+          <div className="form-grid">
+            <div>
+              <label htmlFor="task-repeat">Repetir</label>
+              <select
+                id="task-repeat"
+                value={frequency}
+                onChange={(e) => setFrequency(e.target.value as typeof frequency)}
+              >
+                <option value="none">Não repetir</option>
+                <option value="daily">Diariamente</option>
+                <option value="weekly">Semanalmente</option>
+                <option value="monthly">Mensalmente</option>
+              </select>
+            </div>
+            {frequency !== 'none' && (
+              <div>
+                <label htmlFor="repeat-interval">Intervalo da repetição</label>
+                <input
+                  id="repeat-interval"
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={interval}
+                  onChange={(e) => setIntervalValue(Number(e.target.value))}
+                />
+                <small>
+                  {frequency === 'daily'
+                    ? 'dia(s)'
+                    : frequency === 'weekly'
+                      ? 'semana(s)'
+                      : 'mês(es)'}
+                </small>
+              </div>
+            )}
+          </div>
+          {frequency === 'weekly' && (
+            <div className="weekday-choice" role="group" aria-label="Dias da semana">
+              {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day, i) => (
+                <label key={day}>
+                  <input
+                    type="checkbox"
+                    checked={weekdays.includes(i)}
+                    onChange={(e) =>
+                      setWeekdays(
+                        e.target.checked ? [...weekdays, i] : weekdays.filter((d) => d !== i),
+                      )
+                    }
+                  />
+                  {day}
+                </label>
+              ))}
+            </div>
+          )}
+          {frequency !== 'none' && (
+            <p className="field-help">
+              Ao concluir, cria a próxima ocorrência a partir do prazo atual. Defina uma data.
+            </p>
+          )}
+          <label htmlFor="task-reminder">Lembrete</label>
+          <select id="task-reminder" value={reminder} onChange={(e) => setReminder(e.target.value)}>
+            <option value="">Sem lembrete</option>
+            <option value="0">No prazo</option>
+            <option value="5">5 minutos antes</option>
+            <option value="15">15 minutos antes</option>
+            <option value="30">30 minutos antes</option>
+            <option value="60">1 hora antes</option>
+            <option value="1440">1 dia antes</option>
+            {reminder && !['0', '5', '15', '30', '60', '1440'].includes(reminder) && (
+              <option value={reminder}>{reminder} minutos antes</option>
+            )}
+          </select>
+          <p className="field-help">
+            Horários de Brasília. Sem horário, o lembrete considera 09:00. Ative notificações nas
+            configurações.
+          </p>
+          <label>
+            Checklist · {checklist.filter((i) => i.done).length}/{checklist.length}
+          </label>
+          <div className="checklist">
+            {checklist.map((item) => (
+              <div className="checklist-item" key={item.id}>
+                <input
+                  type="checkbox"
+                  aria-label={`Concluir etapa ${item.title}`}
+                  checked={item.done}
+                  onChange={(e) =>
+                    setChecklist(
+                      checklist.map((i) =>
+                        i.id === item.id ? { ...i, done: e.target.checked } : i,
+                      ),
+                    )
+                  }
+                />
+                <span className={item.done ? 'done' : ''}>{item.title}</span>
+                <button
+                  type="button"
+                  className="text-button danger"
+                  aria-label={`Remover etapa ${item.title}`}
+                  onClick={() => setChecklist(checklist.filter((i) => i.id !== item.id))}
+                >
+                  Remover
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="inline-input">
+            <input
+              aria-label="Nova etapa"
+              value={step}
+              maxLength={200}
+              onChange={(e) => setStep(e.target.value)}
+              placeholder="Uma etapa da tarefa"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  if (step.trim() && checklist.length < 100) {
+                    setChecklist([
+                      ...checklist,
+                      { id: crypto.randomUUID(), title: step.trim(), done: false },
+                    ]);
+                    setStep('');
+                  }
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="button secondary"
+              disabled={!step.trim() || checklist.length >= 100}
+              onClick={() => {
+                setChecklist([
+                  ...checklist,
+                  { id: crypto.randomUUID(), title: step.trim(), done: false },
+                ]);
+                setStep('');
+              }}
+            >
+              Adicionar etapa
+            </button>
+          </div>
         </fieldset>
         {task?.trashedAt && (
           <div className="trash-detail">

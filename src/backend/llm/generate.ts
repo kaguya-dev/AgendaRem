@@ -16,6 +16,23 @@ import { secureFetch, validateApiUrl } from './ssrf';
 
 const MAX_ATTEMPTS = 4;
 const MAX_OUTPUT_TOKENS = 2048;
+const REPLY_OUTPUT_TOKENS = 700;
+
+// O laço de failover é o mesmo para as duas chamadas do ciclo: a que interpreta o pedido e a
+// que reescreve a resposta pronta. O que muda é o que fazer com o texto devolvido e o que fazer
+// quando nenhum modelo responde — daí `parse` e `strict`.
+export type ParseResult<T> = { ok: true; value: T } | { ok: false; failure: string };
+interface ModelTask<T> {
+  system: string;
+  text: string;
+  json: boolean;
+  maxOutputTokens: number;
+  // `failure` descreve o problema para o painel, sem repetir o texto do modelo.
+  parse: (output: string) => ParseResult<T>;
+  // true: falha vira DomainError e interrompe o pedido. false: falha vira null e quem chamou
+  // segue com o que já tinha — usado na reescrita, que é um acabamento, não o resultado.
+  strict: boolean;
+}
 
 // Names the field and the kind of problem, so a rejected answer can be diagnosed from the panel.
 // Uses only the issue's structure, never its message: zod quotes the offending value, and that
@@ -43,12 +60,12 @@ export interface LlmRequestOptions {
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
   now?: Date;
 }
-export async function generateCommands(
-  system: string,
-  text: string,
+async function runModel<T>(
+  task: ModelTask<T>,
   database: Database,
   options: LlmRequestOptions = {},
-): Promise<Command[] | null> {
+): Promise<T | null> {
+  const { system, text } = task;
   const now = options.now ?? new Date();
   const started = Date.now();
   const clock = () => new Date(now.getTime() + Date.now() - started);
@@ -62,7 +79,7 @@ export async function generateCommands(
   if (!candidates.length) return null;
   // Check encryption once, so an invalid server secret isn't mistaken for quota exhaustion.
   encryptionKey();
-  const estimate = estimateTokens(system + text) + MAX_OUTPUT_TOKENS;
+  const estimate = estimateTokens(system + text) + task.maxOutputTokens;
   const deadline = Date.now() + 85000;
   let attempts = 0;
   const failures: string[] = [];
@@ -96,15 +113,15 @@ export async function generateCommands(
               contents: [{ role: 'user', parts: [{ text }] }],
               generationConfig: {
                 temperature: 0,
-                responseMimeType: 'application/json',
-                maxOutputTokens: MAX_OUTPUT_TOKENS,
+                ...(task.json ? { responseMimeType: 'application/json' } : {}),
+                maxOutputTokens: task.maxOutputTokens,
               },
             }
           : {
               model: config.model,
               temperature: 0,
-              max_tokens: MAX_OUTPUT_TOKENS,
-              response_format: { type: 'json_object' },
+              max_tokens: task.maxOutputTokens,
+              ...(task.json ? { response_format: { type: 'json_object' } } : {}),
               messages: [
                 { role: 'system', content: system },
                 { role: 'user', content: text },
@@ -152,7 +169,11 @@ export async function generateCommands(
               ? 'Chave inválida ou sem permissão. Confira a credencial e o modelo.'
               : status >= 500 || status === 408
                 ? 'API temporariamente indisponível.'
-                : 'A API recusou a configuração. Confira modelo e URL.';
+                : status === 404
+                  ? 'A API não reconheceu o endereço. Informe o endpoint completo de Chat Completions, com o caminho inteiro (…/v1/chat/completions), e não só o endereço base.'
+                  : status === 400
+                    ? 'A API recusou o pedido. Confira o identificador do modelo e se ele aceita resposta em JSON.'
+                    : 'A API recusou a configuração. Confira modelo e URL.';
       const fallback =
         status === 401 || status === 403 || status === 402
           ? 86400000
@@ -160,34 +181,37 @@ export async function generateCommands(
             ? 60000
             : 60000;
       const failedAt = clock();
+      // O corpo é lido uma vez só: dele saem o código estruturado do erro e, no Gemini, o
+      // RetryInfo. Nunca o texto do provedor, que pode repetir a mensagem da pessoa.
+      const body = await response.json().catch(() => null);
+      const raw = body?.error?.code ?? body?.error?.type ?? body?.error?.status;
+      // Só um identificador curto e sem espaços atravessa — "unknown_url", "model_not_found",
+      // "INVALID_ARGUMENT". Uma frase não passa neste filtro.
+      const code = typeof raw === 'string' && /^[A-Za-z0-9_.-]{1,60}$/.test(raw) ? raw : null;
+      const detail = code ? `${message} A API respondeu com o código ${code}.` : message;
       let retryAfter = response.headers.get('retry-after');
       // Gemini can return RetryInfo in the JSON body instead of an HTTP header.
       // Read only the structured duration; never expose the upstream error text.
       if (!retryAfter && status === 429) {
-        try {
-          const body = await response.json();
-          const details = body?.error?.details;
-          const retry = Array.isArray(details)
-            ? details.find(
-                (d: { '@type'?: string }) =>
-                  d?.['@type'] === 'type.googleapis.com/google.rpc.RetryInfo',
-              )
-            : null;
-          if (typeof retry?.retryDelay === 'string' && /^\d+(?:\.\d+)?s$/.test(retry.retryDelay))
-            retryAfter = retry.retryDelay.slice(0, -1);
-        } catch {
-          /* The status alone remains sufficient for safe fallback. */
-        }
+        const details = body?.error?.details;
+        const retry = Array.isArray(details)
+          ? details.find(
+              (d: { '@type'?: string }) =>
+                d?.['@type'] === 'type.googleapis.com/google.rpc.RetryInfo',
+            )
+          : null;
+        if (typeof retry?.retryDelay === 'string' && /^\d+(?:\.\d+)?s$/.test(retry.retryDelay))
+          retryAfter = retry.retryDelay.slice(0, -1);
       }
       const until = await markError(
         database,
         provider.id,
-        message,
+        detail,
         retryDelay(retryAfter, failedAt, fallback),
         failedAt,
       );
       failures.push(
-        `${candidate.name}: ${pauseReason({ ...provider, last_error: message, cooldown_until: until }, failedAt)}`,
+        `${candidate.name}: ${pauseReason({ ...provider, last_error: detail, cooldown_until: until }, failedAt)}`,
       );
       continue;
     }
@@ -206,57 +230,100 @@ export async function generateCommands(
       estimate,
       tokenUsage(result, provider.config.kind, system + text),
     );
-    let parsed: Command[];
+    const output =
+      provider.config.kind === 'gemini'
+        ? result?.candidates?.[0]?.content?.parts
+            ?.filter((part: { thought?: boolean }) => !part.thought)
+            .map((part: { text?: string }) => part.text ?? '')
+            .join('')
+        : result?.choices?.[0]?.message?.content;
     // Says which step failed, so the panel can point at the real cause instead of a generic
     // "formato inválido". Never carries the model's own text: it can echo personal data.
-    let failure = 'A IA retornou comandos em formato inválido.';
-    try {
-      const output =
-        provider.config.kind === 'gemini'
-          ? result?.candidates?.[0]?.content?.parts
-              ?.filter((part: { thought?: boolean }) => !part.thought)
-              .map((part: { text?: string }) => part.text ?? '')
-              .join('')
-          : result?.choices?.[0]?.message?.content;
-      if (typeof output !== 'string' || !output.trim()) {
-        failure = 'A IA respondeu sem texto. Confira se o modelo existe e aceita responder JSON.';
-        throw new Error();
-      }
-      // Models often wrap the object in ```json fences or add a sentence around it. Take the
-      // outermost object; the schema below still decides whether its content is acceptable.
-      const object = output.slice(output.indexOf('{'), output.lastIndexOf('}') + 1);
-      let data: unknown;
-      try {
-        data = JSON.parse(object);
-      } catch {
-        failure = 'A IA respondeu em texto, não em JSON. Esse modelo pode não suportar JSON.';
-        throw new Error();
-      }
-      const commands = (data as { commands?: unknown })?.commands;
-      if (!Array.isArray(commands)) {
-        failure = 'A IA respondeu em JSON, mas sem a lista de ações esperada.';
-        throw new Error();
-      }
-      const checked = commandsSchema.safeParse(commands);
-      if (!checked.success) {
-        failure = `A IA montou os comandos fora do formato: ${describe(checked.error)}.`;
-        throw new Error();
-      }
-      parsed = checked.data;
-    } catch {
-      await markError(database, provider.id, failure, 60000, clock());
+    const outcome: ParseResult<T> =
+      typeof output !== 'string' || !output.trim()
+        ? {
+            ok: false,
+            failure: task.json
+              ? 'A IA respondeu sem texto. Confira se o modelo existe e aceita responder JSON.'
+              : 'A IA respondeu sem texto. Confira se o modelo existe e está disponível.',
+          }
+        : task.parse(output);
+    if (!outcome.ok) {
+      await markError(database, provider.id, outcome.failure, 60000, clock());
       // Trying a different model here could change the interpretation of a destructive
       // request. Nothing is executed unless a single response validates completely.
-      throw new DomainError(`${failure} Nenhuma alteração foi feita.`, 422);
+      if (task.strict)
+        throw new DomainError(`${outcome.failure} Nenhuma alteração foi feita.`, 422);
+      return null;
     }
     await database.query(
       'UPDATE agenda_llm_providers SET last_error=NULL,cooldown_until=NULL WHERE id=$1',
       [provider.id],
     );
-    return parsed;
+    return outcome.value;
   }
+  // A reescrita é acabamento: sem modelo disponível, quem chamou segue com a resposta que já
+  // tem. Só a interpretação pode transformar a indisponibilidade em erro do pedido.
+  if (!task.strict) return null;
   throw new DomainError(
     `Nenhuma alteração foi feita.\n${failures.join('\n')}${stoppedEarly ? '\nO limite de tentativas ou de tempo desta mensagem foi alcançado; nem todos os modelos foram consultados.' : ''}`,
     503,
+  );
+}
+
+function parseCommands(output: string): ParseResult<Command[]> {
+  // Models often wrap the object in ```json fences or add a sentence around it. Take the
+  // outermost object; the schema below still decides whether its content is acceptable.
+  const object = output.slice(output.indexOf('{'), output.lastIndexOf('}') + 1);
+  let data: unknown;
+  try {
+    data = JSON.parse(object);
+  } catch {
+    return {
+      ok: false,
+      failure: 'A IA respondeu em texto, não em JSON. Esse modelo pode não suportar JSON.',
+    };
+  }
+  const commands = (data as { commands?: unknown })?.commands;
+  if (!Array.isArray(commands))
+    return { ok: false, failure: 'A IA respondeu em JSON, mas sem a lista de ações esperada.' };
+  const checked = commandsSchema.safeParse(commands);
+  if (!checked.success)
+    return {
+      ok: false,
+      failure: `A IA montou os comandos fora do formato: ${describe(checked.error)}.`,
+    };
+  return { ok: true, value: checked.data };
+}
+export function generateCommands(
+  system: string,
+  text: string,
+  database: Database,
+  options: LlmRequestOptions = {},
+): Promise<Command[] | null> {
+  return runModel(
+    {
+      system,
+      text,
+      json: true,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
+      parse: parseCommands,
+      strict: true,
+    },
+    database,
+    options,
+  );
+}
+export function generateText(
+  system: string,
+  text: string,
+  parse: (output: string) => ParseResult<string>,
+  database: Database,
+  options: LlmRequestOptions = {},
+): Promise<string | null> {
+  return runModel(
+    { system, text, json: true, maxOutputTokens: REPLY_OUTPUT_TOKENS, parse, strict: false },
+    database,
+    options,
   );
 }

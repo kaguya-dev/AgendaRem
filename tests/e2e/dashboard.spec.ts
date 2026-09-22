@@ -11,6 +11,12 @@ test('painel completo: login, grupo, tarefa, edição, conclusão, restauração
   await expect(page.getByText('Senha incorreta.')).toBeVisible();
   await page.getByLabel('Sua senha').fill('test-password-only');
   await page.getByRole('button', { name: 'Entrar no meu espaço' }).click();
+  // A conversa com o assistente é a tela inicial; o painel fica a um clique na navegação.
+  await expect(page.getByLabel('Sua mensagem')).toBeVisible();
+  await page
+    .getByRole('navigation')
+    .getByRole('button', { name: /^Todas as tarefas/ })
+    .click();
   await expect(page.getByRole('heading', { name: 'Todas as tarefas', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Criar grupo', exact: true }).click();
   await page.getByLabel('Nome do grupo').fill('Estudos');
@@ -32,7 +38,10 @@ test('painel completo: login, grupo, tarefa, edição, conclusão, restauração
   await page.screenshot({ path: 'test-results/dashboard-desktop.png', fullPage: true });
   await page.getByRole('button', { name: 'Concluir Revisar limites' }).click();
   await expect(page.getByRole('button', { name: 'Editar Revisar limites' })).not.toBeVisible();
-  await page.getByRole('button', { name: /^Lixeira/ }).click();
+  await page
+    .getByRole('navigation')
+    .getByRole('button', { name: /^Concluídas/ })
+    .click();
   await expect(page.getByRole('button', { name: 'Restaurar Revisar limites' })).toBeVisible();
   await page.getByRole('button', { name: 'Restaurar Revisar limites' }).click();
   await page.getByRole('button', { name: /^Todas as tarefas/ }).click();
@@ -47,8 +56,13 @@ test('painel completo: login, grupo, tarefa, edição, conclusão, restauração
   await page.getByLabel('Sua mensagem').fill('Quais tarefas existem?');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
   await expect(page.locator('.bubble.assistant').last()).toContainText('2 tarefa(s)');
-  await page.getByRole('button', { name: 'Fechar', exact: true }).click();
   await page.reload();
+  // Recarregar volta para a conversa, e ela guarda o que foi trocado antes.
+  await expect(page.locator('.bubble.user').last()).toContainText('Quais tarefas existem?');
+  await page
+    .getByRole('navigation')
+    .getByRole('button', { name: /^Todas as tarefas/ })
+    .click();
   await expect(page.getByRole('button', { name: 'Editar Comprar pilhas' })).toBeVisible();
   await page.getByLabel('Buscar tarefas').fill('pares');
   await expect(page.getByRole('button', { name: 'Editar Revisar limites' })).toBeVisible();

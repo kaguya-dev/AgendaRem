@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { nextDue } from './recurrence';
 import { dueLabel, formatDate, normalize } from './format';
 import { contextFor, findGroup, findTask, selectTasks } from './lookup';
 import {
   Ambiguity,
   DomainError,
-  commandsSchema,
+  panelCommandsSchema,
+  type Group,
   type Command,
   type State,
   type Task,
@@ -25,6 +27,20 @@ function trash(t: Task, state: State, now: Date, completed: boolean) {
     t.completedAt ??= now.toISOString();
   }
 }
+function validateSchedule(t: Task) {
+  if (t.recurrence && !t.dueDate) throw new DomainError('Defina uma data para a recorrência.');
+  if (t.reminderMinutes != null && !t.dueDate)
+    throw new DomainError('Defina uma data para o lembrete.');
+  if (t.recurrence?.frequency === 'monthly' && !t.recurrence.monthDay)
+    t.recurrence.monthDay = Number(t.dueDate!.slice(8));
+  if (t.tags) t.tags = [...new Set(t.tags)];
+  if (t.checklist && new Set(t.checklist.map((item) => item.id)).size !== t.checklist.length)
+    throw new DomainError('Itens do checklist devem ter identificadores diferentes.');
+}
+// Resposta única para pedidos fora do catálogo de operações. Exportada porque a reescrita em
+// linguagem natural é pulada quando a resposta começa por ela: a recusa precisa chegar com
+// estas palavras, sem passar por um modelo que poderia suavizá-la.
+export const UNSUPPORTED = 'Não consigo fazer isso ainda.';
 export const HELP =
   'Você pode criar grupos e tarefas, editar, concluir, restaurar e consultar. Exemplos:\n• Crie um grupo chamado Estudos\n• Adicione ler capítulo 3 em Estudos\n• Anota: comprar pilhas\n• Finalizei #1\n• Restaure #1\n• O que vence hoje?\n• Quais tarefas estão na lixeira?\n• Exclua as tarefas da lixeira depois de 15 dias\n• Desfaça a última alteração\nPara descrições e campos, use também o painel. Com uma IA cadastrada em Modelos de IA, você escreve do seu jeito, sem seguir esses formatos.';
 
@@ -34,8 +50,11 @@ export function execute(
   channel = 'panel',
   now = new Date(),
 ): { state: State; reply: string; clarification: boolean } {
-  const commands = commandsSchema.parse(input);
-  if (commands.some((c) => c.op === 'undo' || c.op === 'clarify') && commands.length > 1)
+  const commands = panelCommandsSchema.parse(input);
+  if (
+    commands.some((c) => ['undo', 'clarify', 'unsupported'].includes(c.op)) &&
+    commands.length > 1
+  )
     throw new DomainError('Envie esse pedido separadamente para evitar alterações parciais.');
   const state = structuredClone(original);
   const ctx = contextFor(state, channel, now);
@@ -43,6 +62,14 @@ export function execute(
   ctx.expiresAt = new Date(now.getTime() + 30 * 60000).toISOString();
   const replies: string[] = [];
   const touched = new Map<number, Task | null>();
+  const groupChanges = new Map<string, Group | null>();
+  const touchGroup = (id: string) => {
+    if (!groupChanges.has(id))
+      groupChanges.set(id, structuredClone(original.groups.find((g) => g.id === id) ?? null));
+    const group = state.groups.find((g) => g.id === id);
+    if (group) group.version = (group.version ?? 0) + 1;
+    mutation = true;
+  };
   let barrier = false;
   let mutation = false;
   let commandIndex = 0;
@@ -69,9 +96,24 @@ export function execute(
         case 'clarify':
           replies.push(c.question ?? 'Pode explicar qual tarefa e alteração você quer fazer?');
           break;
+        // Resposta única para tudo o que a agenda não sabe fazer. Sem ela, um pedido fora do
+        // catálogo virava uma pergunta de esclarecimento, e a pessoa reformulava a frase várias
+        // vezes tentando acertar uma operação que simplesmente não existe.
+        case 'unsupported':
+          replies.push(`${UNSUPPORTED}${c.question ? ` ${c.question}` : ''}`);
+          break;
         case 'settings':
           replies.push(
-            `A lixeira exclui tarefas após ${state.settings.retentionDays} dias. Alterações no prazo valem para novas entradas.`,
+            `A lixeira exclui tarefas após ${state.settings.retentionDays} dias. Alterações no prazo valem para novas entradas. Resposta em linguagem natural: ${state.settings.naturalReply === false ? 'desligada' : 'ligada'}.`,
+          );
+          break;
+        case 'set_natural_reply':
+          state.settings.naturalReply = requireValue(c.enabled, 'ligada ou desligada');
+          mutation = barrier = true;
+          replies.push(
+            c.enabled
+              ? 'Respostas em linguagem natural ligadas. Cada mensagem passa por uma segunda chamada à IA, que conta nos limites diários.'
+              : 'Respostas em linguagem natural desligadas. As respostas voltam ao formato direto, sem chamada extra à IA.',
           );
           break;
         case 'set_retention':
@@ -85,28 +127,83 @@ export function execute(
           const name = requireValue(c.name, 'o nome do grupo');
           if (state.groups.some((g) => normalize(g.name) === normalize(name)))
             throw new DomainError('Já existe um grupo com esse nome.');
-          const group = { id: randomUUID(), name, createdAt: now.toISOString() };
+          const group = {
+            id: randomUUID(),
+            name,
+            createdAt: now.toISOString(),
+            color: c.color ?? 'sage',
+            icon: c.icon ?? 'folder',
+            order: c.order ?? state.groups.length,
+            archivedAt: null,
+            version: 0,
+          };
           state.groups.push(group);
           ctx.groupId = group.id;
-          mutation = barrier = true;
+          touchGroup(group.id);
           replies.push(`Grupo ${name} criado.`);
           break;
         }
-        case 'rename_group': {
-          const group = findGroup(state, requireValue(c.group ?? undefined, 'o grupo'), ctx)!;
-          if (!group) throw new DomainError('A Caixa de entrada não pode ser renomeada.');
-          const name = requireValue(c.name, 'o novo nome');
-          if (state.groups.some((g) => g.id !== group.id && normalize(g.name) === normalize(name)))
-            throw new DomainError('Já existe um grupo com esse nome.');
-          group.name = name;
-          mutation = barrier = true;
-          replies.push(`Grupo renomeado para ${name}.`);
+        case 'rename_group':
+        case 'update_group':
+        case 'archive_group':
+        case 'restore_group':
+        case 'delete_group': {
+          const group = findGroup(state, requireValue(c.group ?? undefined, 'o grupo'), ctx);
+          if (!group) throw new DomainError('A Caixa de entrada não pode ser alterada.');
+          if (c.expectedVersion !== undefined && c.expectedVersion !== (group.version ?? 0))
+            throw new DomainError(
+              'O grupo foi alterado em outra tela. Atualize antes de salvar.',
+              409,
+            );
+          if (c.op === 'delete_group' && c.deleteTasks === undefined)
+            throw new DomainError(
+              'Escolha: excluir só o grupo e manter as tarefas na Caixa de entrada, ou excluir também as tarefas.',
+            );
+          touchGroup(group.id);
+          if (c.op === 'delete_group') {
+            let count = 0;
+            for (const task of state.tasks.filter((t) => t.groupId === group.id)) {
+              task.groupId = null;
+              if (c.deleteTasks && !task.trashedAt) trash(task, state, now, false);
+              touch(
+                task,
+                c.deleteTasks
+                  ? 'Grupo excluído; tarefa enviada à lixeira'
+                  : 'Grupo excluído; tarefa desvinculada',
+              );
+              count++;
+            }
+            state.groups = state.groups.filter((g) => g.id !== group.id);
+            for (const context of state.conversations) {
+              if (context.groupId === group.id) context.groupId = null;
+              delete context.pending;
+              delete context.lastQuery;
+            }
+            replies.push(
+              `Grupo ${group.name} excluído. ${count} tarefa(s) ${c.deleteTasks ? 'na lixeira' : 'preservada(s); tarefas ativas na Caixa de entrada'}.`,
+            );
+          } else if (c.op === 'archive_group' || c.op === 'restore_group') {
+            group.archivedAt = c.op === 'archive_group' ? now.toISOString() : null;
+            replies.push(`Grupo ${group.name} ${group.archivedAt ? 'arquivado' : 'restaurado'}.`);
+          } else {
+            if (c.name !== undefined || c.op === 'rename_group') {
+              const name = requireValue(c.name, 'o novo nome');
+              if (
+                state.groups.some((g) => g.id !== group.id && normalize(g.name) === normalize(name))
+              )
+                throw new DomainError('Já existe um grupo com esse nome.');
+              group.name = name;
+            }
+            for (const key of ['color', 'icon', 'order'] as const)
+              if (c[key] !== undefined) Object.assign(group, { [key]: c[key] });
+            replies.push(`Grupo ${group.name} atualizado.`);
+          }
           break;
         }
         case 'list_groups':
           replies.push(
             state.groups.length
-              ? `${state.groups.length} grupo(s):\n${state.groups.map((g) => `• ${g.name}`).join('\n')}`
+              ? `${state.groups.length} grupo(s):\n${state.groups.map((g) => `• ${g.name}${g.archivedAt ? ' (arquivado)' : ''}`).join('\n')}`
               : 'Você ainda não tem grupos.',
           );
           break;
@@ -128,8 +225,13 @@ export function execute(
             version: 0,
             createdAt: now.toISOString(),
             updatedAt: now.toISOString(),
+            tags: [...new Set(c.tags ?? [])],
+            checklist: c.checklist ?? [],
+            recurrence: c.recurrence ?? null,
+            reminderMinutes: c.reminderMinutes ?? null,
           };
           if (t.dueTime && !t.dueDate) throw new DomainError('Informe a data junto com o horário.');
+          validateSchedule(t);
           state.tasks.push(t);
           touch(t, 'Tarefa criada');
           ctx.taskIds = [t.id];
@@ -150,6 +252,10 @@ export function execute(
             'priority',
             'dueDate',
             'dueTime',
+            'tags',
+            'checklist',
+            'recurrence',
+            'reminderMinutes',
           ] as const) {
             if (c[key] !== undefined) Object.assign(t, { [key]: c[key] });
           }
@@ -160,6 +266,8 @@ export function execute(
           if (c.dueDate === null) t.dueTime = null;
           if (t.dueTime && !t.dueDate) throw new DomainError('Informe a data junto com o horário.');
           if (c.group !== undefined) t.groupId = findGroup(state, c.group, ctx)?.id ?? null;
+          if (c.status) t.completedAt = null;
+          validateSchedule(t);
           touch(t, 'Tarefa atualizada');
           replies.push(`#${t.id} ${t.title} atualizada — ${dueLabel(t)}.`);
           break;
@@ -169,30 +277,54 @@ export function execute(
         case 'restore_task': {
           const t = findTask(state, c, ctx);
           if (c.op === 'restore_task') {
-            if (!t.trashedAt) {
-              replies.push(`#${t.id} já está fora da lixeira.`);
+            if (!t.trashedAt && t.status !== 'completed') {
+              replies.push(`#${t.id} já está ativa.`);
               break;
             }
             t.status = 'pending';
             t.trashedAt = t.purgeAt = t.completedAt = t.trashReason = null;
             touch(t, 'Tarefa restaurada');
             replies.push(`#${t.id} ${t.title} restaurada como pendente.`);
-          } else {
-            if (t.trashedAt && (c.op === 'trash_task' || t.status === 'completed')) {
-              replies.push(
-                `#${t.id} já está na lixeira. Exclusão prevista: ${formatDate(t.purgeAt!)}.`,
-              );
+          } else if (c.op === 'complete_task') {
+            if (t.trashedAt) throw new DomainError('Restaure a tarefa antes de concluir.');
+            if (t.status === 'completed') {
+              replies.push(`#${t.id} já está concluída.`);
               break;
             }
-            trash(t, state, now, c.op === 'complete_task');
-            touch(
-              t,
-              c.op === 'complete_task'
-                ? 'Tarefa concluída e enviada à lixeira'
-                : 'Tarefa descartada',
-            );
+            t.status = 'completed';
+            t.completedAt = now.toISOString();
+            touch(t, 'Tarefa concluída');
+            replies.push(`#${t.id} ${t.title} concluída. Mantida no histórico de concluídas.`);
+            const dueDate = nextDue(t);
+            if (
+              dueDate &&
+              !state.tasks.some((next) => next.recurringFrom === t.id && !next.trashedAt)
+            ) {
+              const next: Task = {
+                ...structuredClone(t),
+                id: state.settings.nextTaskId++,
+                dueDate,
+                status: 'pending',
+                completedAt: null,
+                version: 0,
+                recurringFrom: t.id,
+                createdAt: now.toISOString(),
+                updatedAt: now.toISOString(),
+                checklist: t.checklist?.map((item) => ({ ...item, done: false })),
+              };
+              state.tasks.push(next);
+              touch(next, 'Próxima ocorrência criada');
+              replies.push(`Próxima ocorrência: #${next.id} — ${dueLabel(next)}.`);
+            }
+          } else {
+            if (t.trashedAt) {
+              replies.push(`#${t.id} já está na lixeira.`);
+              break;
+            }
+            trash(t, state, now, false);
+            touch(t, 'Tarefa descartada');
             replies.push(
-              `#${t.id} ${t.title} ${c.op === 'complete_task' ? 'concluída e enviada' : 'enviada'} à lixeira. Exclusão prevista: ${formatDate(t.purgeAt!)}. Você pode restaurá-la antes da exclusão.`,
+              `#${t.id} ${t.title} enviada à lixeira. Exclusão prevista: ${formatDate(t.purgeAt!)}.`,
             );
           }
           break;
@@ -205,6 +337,8 @@ export function execute(
           break;
         }
         case 'list_tasks': {
+          if (c.fromDate && c.toDate && c.fromDate > c.toDate)
+            throw new DomainError('O início do período deve vir antes do fim.');
           const groupId =
             c.group !== undefined ? (findGroup(state, c.group, ctx)?.id ?? null) : undefined;
           const all = selectTasks(state, c, now, groupId);
@@ -218,11 +352,11 @@ export function execute(
             overdue: 'atrasadas',
             no_date: 'sem prazo',
             trash: 'lixeira',
-            completed: 'concluídas na lixeira',
+            completed: 'concluídas',
             all: 'todas, incluindo lixeira',
           }[c.filter ?? 'active'];
           replies.push(
-            `${all.length} tarefa(s) — ${filterName}${c.search ? `; busca: ${c.search}` : ''}. Página ${page}/${Math.max(1, Math.ceil(all.length / 10))}.\n${items.map((t) => `#${t.id} ${t.title} — ${dueLabel(t)}${t.purgeAt ? `; exclusão: ${formatDate(t.purgeAt)}` : ''}`).join('\n')}${all.length > page * 10 ? '\nEnvie “mostrar mais” para continuar.' : ''}`,
+            `${all.length} tarefa(s) — ${c.dueDate ? `para ${c.dueDate.split('-').reverse().join('/')}` : filterName}${c.fromDate || c.toDate ? `; período ${c.fromDate ?? 'início'} a ${c.toDate ?? 'fim'}` : ''}${c.search ? `; busca: ${c.search}` : ''}. Página ${page}/${Math.max(1, Math.ceil(all.length / 10))}.\n${items.map((t) => `#${t.id} ${t.title} — ${dueLabel(t)}${t.purgeAt ? `; exclusão: ${formatDate(t.purgeAt)}` : ''}`).join('\n')}${all.length > page * 10 ? '\nEnvie “mostrar mais” para continuar.' : ''}`,
           );
           break;
         }
@@ -230,12 +364,34 @@ export function execute(
           const op = [...state.operations].reverse().find((o) => o.channel === channel);
           if (!op || op.undone || !op.undoable)
             throw new DomainError(
-              'A última operação não pode ser desfeita. Alterações de grupos e configurações não têm desfazer no MVP.',
+              'A última operação não pode ser desfeita. Alterações de configurações não têm desfazer.',
             );
           if (now.getTime() - new Date(op.at).getTime() > 86400000)
             throw new DomainError(
               'O prazo de 24 horas para desfazer terminou. Tarefas na lixeira ainda podem ser restauradas.',
             );
+          for (const change of op.groupChanges ?? []) {
+            const current = state.groups.find((g) => g.id === change.id) ?? null;
+            if (JSON.stringify(current) !== JSON.stringify(change.after))
+              throw new DomainError('O grupo foi alterado depois dessa operação.', 409);
+            if (
+              !change.before &&
+              state.tasks.some(
+                (t) => t.groupId === change.id && !op.changes.some((c) => c.taskId === t.id),
+              )
+            )
+              throw new DomainError(
+                'O grupo recebeu novas tarefas. Mova-as antes de desfazer.',
+                409,
+              );
+            if (
+              change.before &&
+              state.groups.some(
+                (g) => g.id !== change.id && normalize(g.name) === normalize(change.before!.name),
+              )
+            )
+              throw new DomainError('Outro grupo está usando o nome anterior.', 409);
+          }
           for (const change of op.changes) {
             const t = state.tasks.find((t) => t.id === change.taskId);
             if (!t)
@@ -256,6 +412,23 @@ export function execute(
             } else trash(t, state, now, false);
             touch(t, 'Alteração desfeita');
           }
+          for (const change of op.groupChanges ?? []) {
+            touchGroup(change.id);
+            state.groups = state.groups.filter((g) => g.id !== change.id);
+            if (change.before)
+              state.groups.push({
+                ...structuredClone(change.before),
+                version: (change.after?.version ?? change.before.version ?? 0) + 1,
+              });
+            else
+              for (const t of state.tasks.filter((t) => t.groupId === change.id)) {
+                t.groupId = null;
+                touch(t, 'Grupo desfeito');
+              }
+          }
+          for (const context of state.conversations)
+            if (context.groupId && !state.groups.some((g) => g.id === context.groupId))
+              context.groupId = null;
           op.undone = true;
           barrier = true;
           replies.push('Última alteração desfeita.');
@@ -295,14 +468,19 @@ export function execute(
         before,
         afterVersion: state.tasks.find((t) => t.id === taskId)!.version,
       })),
-      undoable: !barrier && touched.size > 0,
+      groupChanges: [...groupChanges].map(([id, before]) => ({
+        id,
+        before,
+        after: structuredClone(state.groups.find((g) => g.id === id) ?? null),
+      })),
+      undoable: !barrier && (touched.size > 0 || groupChanges.size > 0),
       undone: false,
     });
   }
   return {
     state,
     reply: replies.join('\n\n'),
-    clarification: commands.some((c) => c.op === 'clarify'),
+    clarification: commands.some((c) => c.op === 'clarify' || c.op === 'unsupported'),
   };
 }
 

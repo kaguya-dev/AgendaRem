@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import { Pool } from 'pg';
 import { PGlite } from '@electric-sql/pglite';
-import { schema, usageDetailsMigration } from './schema';
+import { schema, featureMigration } from './schema';
 import { emptyState, type State } from './domain';
 
 export interface Sql {
@@ -11,7 +11,11 @@ export interface Database extends Sql {
   transaction<T>(fn: (tx: Sql) => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
-export async function createDatabase(url?: string, path?: string): Promise<Database> {
+export async function createDatabase(
+  url?: string,
+  path?: string,
+  initialize = true,
+): Promise<Database> {
   if (url) {
     const pool = new Pool({
       connectionString: url,
@@ -19,7 +23,7 @@ export async function createDatabase(url?: string, path?: string): Promise<Datab
       connectionTimeoutMillis: 15000,
       idleTimeoutMillis: 30000,
     });
-    await pool.query(schema);
+    if (initialize) await pool.query(schema + featureMigration);
     return {
       query: async <T>(sql: string, params?: unknown[]) => ({
         rows: (await pool.query(sql, params)).rows as T[],
@@ -47,7 +51,7 @@ export async function createDatabase(url?: string, path?: string): Promise<Datab
   }
   if (path) await mkdir(path, { recursive: true });
   const pg = new PGlite(path);
-  await pg.exec(schema);
+  await pg.exec(schema + featureMigration);
   return {
     query: <T>(sql: string, params?: unknown[]) => pg.query<T>(sql, params),
     transaction: (fn) =>
@@ -59,7 +63,7 @@ export async function createDatabase(url?: string, path?: string): Promise<Datab
 }
 const globalDb = globalThis as unknown as {
   agendaDb?: Promise<Database>;
-  agendaUsageDetails?: Promise<unknown>;
+  agendaFeaturesV2?: Promise<unknown>;
 };
 export function db(): Promise<Database> {
   if (!globalDb.agendaDb) {
@@ -70,21 +74,27 @@ export function db(): Promise<Database> {
     globalDb.agendaDb = createDatabase(
       process.env.DATABASE_MODE === 'local' ? undefined : process.env.DATABASE_URL,
       process.env.LOCAL_DATABASE_PATH ?? '.data/agenda',
+      process.env.DATABASE_MODE === 'local' || process.env.DATABASE_AUTO_MIGRATE === 'true',
     );
     globalDb.agendaDb.catch(() => {
       delete globalDb.agendaDb;
     });
   }
   return globalDb.agendaDb.then(async (connection) => {
-    // Development hot reload can keep an already-open PGlite connection. Apply this
-    // additive migration on that connection instead of opening the data directory twice.
-    if (!globalDb.agendaUsageDetails) {
-      globalDb.agendaUsageDetails = connection.query(usageDetailsMigration);
-      globalDb.agendaUsageDetails.catch(() => {
-        delete globalDb.agendaUsageDetails;
-      });
+    // Only the local development database applies migrations on startup.
+    // Production uses the migration connection, separate from the runtime role.
+    if (process.env.DATABASE_MODE === 'local') {
+      if (!globalDb.agendaFeaturesV2) {
+        globalDb.agendaFeaturesV2 = (async () => {
+          for (const statement of featureMigration.split(';').filter((s) => s.trim()))
+            await connection.query(statement);
+        })();
+        globalDb.agendaFeaturesV2.catch(() => {
+          delete globalDb.agendaFeaturesV2;
+        });
+      }
+      await globalDb.agendaFeaturesV2;
     }
-    await globalDb.agendaUsageDetails;
     return connection;
   });
 }
@@ -120,6 +130,13 @@ export async function saveState(tx: Sql, before: State, after: State) {
     ]);
   for (const [key, table] of Object.entries(tables) as [keyof typeof tables, string][]) {
     const old = new Map(before[key].map((item) => [String(item.id), JSON.stringify(item)]));
+    // Remove changed group rows first so restoring a backup can swap unique names atomically.
+    if (key === 'groups')
+      for (const item of before.groups) {
+        const next = after.groups.find((g) => g.id === item.id);
+        if (!next || JSON.stringify(next) !== JSON.stringify(item))
+          await tx.query('DELETE FROM agenda_groups WHERE id=$1', [item.id]);
+      }
     for (const item of after[key]) {
       const id = String(item.id);
       const json = JSON.stringify(item);

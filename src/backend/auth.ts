@@ -1,4 +1,4 @@
-import { createHmac, createHash, timingSafeEqual, scryptSync, randomBytes } from 'node:crypto';
+import { createHash, timingSafeEqual, scryptSync } from 'node:crypto';
 import { DomainError } from './domain';
 
 export const COOKIE = 'agenda_session';
@@ -17,39 +17,6 @@ export function verifyPassword(password: string) {
     );
   }
   return Boolean(process.env.PANEL_PASSWORD && equal(password, process.env.PANEL_PASSWORD));
-}
-function secret() {
-  const value = process.env.SESSION_SECRET;
-  if (!value || value.length < 32)
-    throw new DomainError('Execute npm run setup para configurar o acesso.', 503);
-  return value;
-}
-export function sessionToken(now = Date.now()) {
-  const data = Buffer.from(
-    JSON.stringify({ exp: now + 7 * 86400000, nonce: randomBytes(16).toString('hex') }),
-  ).toString('base64url');
-  return `${data}.${createHmac('sha256', secret()).update(data).digest('base64url')}`;
-}
-export function authenticated(request: Request) {
-  const token = request.headers
-    .get('cookie')
-    ?.split(';')
-    .map((c) => c.trim())
-    .find((c) => c.startsWith(`${COOKIE}=`))
-    ?.slice(COOKIE.length + 1);
-  if (!token) return false;
-  try {
-    const [data, signature] = token.split('.');
-    if (
-      !data ||
-      !signature ||
-      !equal(signature, createHmac('sha256', secret()).update(data).digest('base64url'))
-    )
-      return false;
-    return JSON.parse(Buffer.from(data, 'base64url').toString()).exp > Date.now();
-  } catch {
-    return false;
-  }
 }
 export function cronAuth(request: Request) {
   const expected = process.env.CRON_SECRET;

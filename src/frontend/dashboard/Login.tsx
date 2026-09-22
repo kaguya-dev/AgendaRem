@@ -7,6 +7,10 @@ import { Brand } from './Brand';
 
 export function Login({ onLogin }: { onLogin: () => void }) {
   const [password, setPassword] = useState('');
+  const [trusted, setTrusted] = useState(false);
+  const [code, setCode] = useState('');
+  const [needsCode, setNeedsCode] = useState(false);
+  const [device, setDevice] = useState('Meu dispositivo');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   async function submit(e: FormEvent) {
@@ -14,8 +18,14 @@ export function Login({ onLogin }: { onLogin: () => void }) {
     setBusy(true);
     setError('');
     try {
-      await api('login', { password });
-      onLogin();
+      const result = await api<{ needsCode: boolean }>('login', {
+        password,
+        code: code || undefined,
+        trusted,
+        device,
+      });
+      if (result.needsCode) setNeedsCode(true);
+      else onLogin();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -79,6 +89,42 @@ export function Login({ onLogin }: { onLogin: () => void }) {
               autoFocus
               placeholder="Digite sua senha de acesso"
             />
+            {needsCode && (
+              <>
+                <label htmlFor="login-code">Código do autenticador ou recuperação</label>
+                <input
+                  id="login-code"
+                  autoComplete="one-time-code"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  required
+                  maxLength={64}
+                />
+              </>
+            )}
+            <label className="check-label">
+              <input
+                type="checkbox"
+                checked={trusted}
+                onChange={(e) => setTrusted(e.target.checked)}
+              />
+              Confiar neste dispositivo por 90 dias
+            </label>
+            {trusted && (
+              <>
+                <label htmlFor="device-name">Nome do dispositivo</label>
+                <input
+                  id="device-name"
+                  value={device}
+                  onChange={(e) => setDevice(e.target.value)}
+                  maxLength={100}
+                />
+                <small>
+                  Use apenas em aparelhos pessoais. Você poderá encerrar este acesso nas
+                  configurações.
+                </small>
+              </>
+            )}
             {error && (
               <p className="form-error" role="alert">
                 {error}

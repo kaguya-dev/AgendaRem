@@ -7,6 +7,11 @@ export interface Group {
   id: string;
   name: string;
   createdAt: string;
+  color?: string;
+  icon?: string;
+  order?: number;
+  archivedAt?: string | null;
+  version?: number;
 }
 export interface Task {
   id: number;
@@ -24,6 +29,16 @@ export interface Task {
   version: number;
   createdAt: string;
   updatedAt: string;
+  tags?: string[];
+  checklist?: { id: string; title: string; done: boolean }[];
+  recurrence?: {
+    frequency: 'daily' | 'weekly' | 'monthly';
+    interval: number;
+    weekdays?: number[];
+    monthDay?: number;
+  } | null;
+  reminderMinutes?: number | null;
+  recurringFrom?: number;
 }
 export interface History {
   id: string;
@@ -45,6 +60,7 @@ export interface Operation {
   changes: Change[];
   undoable: boolean;
   undone: boolean;
+  groupChanges?: { id: string; before: Group | null; after: Group | null }[];
 }
 export interface Conversation {
   id: string;
@@ -70,6 +86,9 @@ export interface State {
     retentionDays: number;
     nextTaskId: number;
     revision: number;
+    // Segunda chamada à IA que reescreve a resposta pronta em linguagem natural. Ausente
+    // significa ligada: bancos criados antes desta versão não têm o campo.
+    naturalReply?: boolean;
   };
 }
 export function emptyState(): State {
@@ -86,18 +105,42 @@ export function emptyState(): State {
     },
   };
 }
-const date = z
+export const dateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .refine((value) => {
     const parsed = new Date(`${value}T00:00:00Z`);
     return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
   }, 'Data inválida');
+export const recurrenceSchema = z
+  .object({
+    frequency: z.enum(['daily', 'weekly', 'monthly']),
+    interval: z.number().int().min(1).max(365),
+    weekdays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+    monthDay: z.number().int().min(1).max(31).optional(),
+  })
+  .strict();
+export const checklistSchema = z
+  .array(
+    z
+      .object({
+        id: z.string().uuid(),
+        title: z.string().trim().min(1).max(200),
+        done: z.boolean(),
+      })
+      .strict(),
+  )
+  .max(100);
+export const tagsSchema = z.array(z.string().trim().min(1).max(40)).max(20);
 export const commandSchema = z
   .object({
     op: z.enum([
       'create_group',
       'rename_group',
+      'update_group',
+      'delete_group',
+      'archive_group',
+      'restore_group',
       'list_groups',
       'create_task',
       'update_task',
@@ -108,9 +151,11 @@ export const commandSchema = z
       'details',
       'settings',
       'set_retention',
+      'set_natural_reply',
       'undo',
       'help',
       'clarify',
+      'unsupported',
     ]),
     task: z.string().min(1).max(200).optional(),
     group: z.string().min(1).max(100).nullable().optional(),
@@ -120,7 +165,19 @@ export const commandSchema = z
     appendDescription: z.string().max(5000).optional(),
     status: z.enum(['pending', 'in_progress']).optional(),
     priority: z.enum(['low', 'normal', 'high']).optional(),
-    dueDate: date.nullable().optional(),
+    dueDate: dateSchema.nullable().optional(),
+    fromDate: dateSchema.optional(),
+    toDate: dateSchema.optional(),
+    tag: z.string().max(40).optional(),
+    tags: tagsSchema.optional(),
+    checklist: checklistSchema.optional(),
+    recurrence: recurrenceSchema.nullable().optional(),
+    reminderMinutes: z.number().int().min(0).max(10080).nullable().optional(),
+    color: z.enum(['sage', 'blue', 'violet', 'amber', 'rose']).optional(),
+    icon: z.enum(['folder', 'book', 'briefcase', 'home', 'heart', 'star']).optional(),
+    order: z.number().int().min(0).max(10000).optional(),
+    deleteTasks: z.boolean().optional(),
+    enabled: z.boolean().optional(),
     dueTime: z
       .string()
       .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
@@ -132,12 +189,13 @@ export const commandSchema = z
     search: z.string().max(200).optional(),
     page: z.number().int().min(1).max(10000).optional(),
     days: z.number().int().min(1).max(3650).optional(),
-    expectedVersion: z.number().int().positive().optional(),
+    expectedVersion: z.number().int().nonnegative().optional(),
     question: z.string().min(1).max(600).optional(),
   })
   .strict();
 export type Command = z.infer<typeof commandSchema>;
 export const commandsSchema = z.array(commandSchema).min(1).max(10);
+export const panelCommandsSchema = z.array(commandSchema).min(1).max(100);
 export class DomainError extends Error {
   constructor(
     message: string,

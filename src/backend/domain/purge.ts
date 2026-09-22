@@ -10,6 +10,7 @@ export function purge(original: State, now = new Date()): { state: State; remove
   for (const op of state.operations)
     if (op.changes.some((c) => removed.includes(c.taskId))) {
       op.changes = [];
+      op.groupChanges = [];
       op.undoable = false;
     }
   for (const ctx of state.conversations) {
@@ -29,6 +30,7 @@ export function purge(original: State, now = new Date()): { state: State; remove
   for (const op of state.operations)
     if (op.at < cutoff) {
       op.changes = [];
+      op.groupChanges = [];
       op.undoable = false;
     }
   return { state, removed };

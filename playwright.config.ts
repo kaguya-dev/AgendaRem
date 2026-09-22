@@ -16,7 +16,10 @@ export default defineConfig({
     launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined },
   },
   webServer: {
-    command: 'npm run dev -- --port 3100',
+    command:
+      process.env.PLAYWRIGHT_DEV === '1'
+        ? 'npm run dev -- --port 3100'
+        : 'npm run build && npm run start -- --port 3100 --hostname 127.0.0.1',
     url: 'http://localhost:3100/api/health',
     reuseExistingServer: false,
     timeout: 120000,
@@ -27,7 +30,6 @@ export default defineConfig({
       APP_URL: 'http://localhost:3100',
       PANEL_PASSWORD: 'test-password-only',
       PANEL_PASSWORD_HASH: '',
-      SESSION_SECRET: 'test-secret-only-not-for-production-123456789',
       LLM_ENCRYPTION_KEY: '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
       CRON_SECRET: 'cron-test-secret-only-not-for-production-123456789',
       NEXT_TELEMETRY_DISABLED: '1',

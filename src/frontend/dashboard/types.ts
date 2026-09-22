@@ -1,7 +1,17 @@
 import type { Command, Group, History, Task } from '@/backend/domain';
 
 export type View =
-  'all' | 'inbox' | 'today' | 'overdue' | 'no_date' | 'completed' | 'trash' | `group:${string}`;
+  | 'assistant'
+  | 'calendar'
+  | 'archived'
+  | 'all'
+  | 'inbox'
+  | 'today'
+  | 'overdue'
+  | 'no_date'
+  | 'completed'
+  | 'trash'
+  | `group:${string}`;
 export type Message = {
   id: string;
   channel: string;
@@ -15,7 +25,7 @@ export type Data = {
   tasks: Task[];
   groups: Group[];
   history: History[];
-  settings: { retentionDays: number };
+  settings: { retentionDays: number; revision: number; naturalReply: boolean };
   messages: Message[];
   llm: string;
   storage: string;
@@ -25,8 +35,9 @@ export type Modal =
   | { type: 'group'; group?: Group }
   | { type: 'settings' }
   | { type: 'llm' }
-  | { type: 'chat' }
   | { type: 'activity' }
+  | { type: 'security' }
+  | { type: 'backup' }
   | null;
 
 export type Action = (commands: Command[], close?: boolean) => Promise<boolean>;

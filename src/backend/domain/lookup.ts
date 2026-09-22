@@ -88,7 +88,7 @@ export function findTask(state: State, command: Command, ctx: Conversation): Tas
         label: `#${t.id} ${t.title} — ${state.groups.find((g) => g.id === t.groupId)?.name ?? 'Caixa de entrada'}${t.trashedAt ? ' (lixeira)' : ''}`,
       })),
     );
-  if (command.expectedVersion && command.expectedVersion !== matches[0].version)
+  if (command.expectedVersion !== undefined && command.expectedVersion !== matches[0].version)
     throw new DomainError('A tarefa foi alterada em outra tela. Atualize antes de salvar.', 409);
   ctx.taskIds = [matches[0].id];
   return matches[0];
@@ -105,8 +105,20 @@ export function selectTasks(
       if (filter === 'trash') {
         if (!t.trashedAt) return false;
       } else if (filter === 'completed') {
-        if (!t.trashedAt || t.status !== 'completed') return false;
+        if (t.trashedAt || t.status !== 'completed') return false;
       } else if (filter !== 'all' && t.trashedAt) return false;
+      if (!['all', 'trash', 'completed'].includes(filter) && t.status === 'completed') return false;
+      if (
+        groupId === undefined &&
+        filter !== 'all' &&
+        state.groups.some((g) => g.id === t.groupId && g.archivedAt)
+      )
+        return false;
+      if (command.dueDate !== undefined && t.dueDate !== command.dueDate) return false;
+      if (command.fromDate && (!t.dueDate || t.dueDate < command.fromDate)) return false;
+      if (command.toDate && (!t.dueDate || t.dueDate > command.toDate)) return false;
+      if (command.tag && !t.tags?.some((tag) => normalize(tag) === normalize(command.tag!)))
+        return false;
       if (filter === 'today' && t.dueDate !== localDate(now)) return false;
       if (filter === 'overdue' && !isOverdue(t, now)) return false;
       if (filter === 'no_date' && t.dueDate) return false;

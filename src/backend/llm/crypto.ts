@@ -41,7 +41,9 @@ export function decryptKey(value: string, id: string): string {
     ]).toString('utf8');
   } catch {
     throw new DomainError(
-      'Não foi possível abrir a chave da IA. Confira LLM_ENCRYPTION_KEY ou cadastre novamente a chave.',
+      id === 'account-totp'
+        ? 'Não foi possível abrir o segredo do autenticador. Confira a chave de criptografia do servidor ou use um código de recuperação.'
+        : 'Não foi possível abrir a chave da IA. Confira LLM_ENCRYPTION_KEY ou cadastre novamente a chave.',
       503,
     );
   }

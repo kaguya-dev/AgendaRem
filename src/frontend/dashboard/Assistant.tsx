@@ -2,20 +2,21 @@
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowRight, ListTodo, LoaderCircle, MessageCircle, Send, Trash2 } from 'lucide-react';
+import { AssistantReply } from './AssistantReply';
 import { api } from './api';
-import { Dialog } from './Dialog';
 import { statusLabels } from './format';
 import type { Data } from './types';
 
-export function ChatDialog({
-  data,
-  close,
-  refresh,
-}: {
-  data: Data | null;
-  close: () => void;
-  refresh: () => Promise<void>;
-}) {
+const EXAMPLES = [
+  'Anota: comprar pilhas',
+  'Quais tarefas eu tenho pro dia 24?',
+  'Adicione revisar o artigo em Estudos',
+  'Finalizei #1',
+];
+
+// Tela inicial do painel, não uma janela sobre ele: a conversa é por onde a maior parte dos
+// pedidos entra, e abrir a agenda já dentro dela poupa um clique em toda visita.
+export function Assistant({ data, refresh }: { data: Data | null; refresh: () => Promise<void> }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -71,17 +72,16 @@ export function ChatDialog({
     }
   }
   return (
-    <Dialog
-      title="Assistente da agenda"
-      subtitle="Seus próximos passos começam com uma mensagem."
-      close={close}
-      wide
-    >
+    <section className="assistant-view" aria-label="Assistente da agenda">
       <div className="chat-note">
         <MessageCircle size={16} />
         {data?.llm === 'none'
           ? 'Sem IA cadastrada, entendo só frases em formato exato, como “Anota: comprar pilhas”. Cadastre uma API em Modelos de IA para escrever do seu jeito.'
-          : 'Toda mensagem é interpretada pela IA, na ordem de prioridade que você configurou, e conta nos limites diários.'}
+          : `Toda mensagem é interpretada pela IA, na ordem de prioridade que você configurou, e conta nos limites diários.${
+              data?.settings.naturalReply
+                ? ' A resposta passa por uma segunda chamada, que reescreve o texto sem mudar os dados.'
+                : ''
+            }`}
       </div>
       <div className="chat-messages">
         {!messages.length && (
@@ -92,7 +92,7 @@ export function ChatDialog({
             <h3>O que você quer organizar?</h3>
             <p>Escreva uma tarefa ou experimente um exemplo.</p>
             <div className="chat-examples">
-              {['Anota: comprar pilhas', 'Quais tarefas existem?', 'Ajuda'].map((example) => (
+              {EXAMPLES.map((example) => (
                 <button key={example} onClick={() => setText(example)}>
                   {example}
                   <ArrowRight size={13} />
@@ -110,7 +110,7 @@ export function ChatDialog({
                   <ListTodo size={14} />
                   AgendaMagno
                 </span>
-                {m.reply}
+                <AssistantReply text={m.reply} />
               </div>
             ) : (
               <div className="bubble assistant muted">
@@ -151,7 +151,7 @@ export function ChatDialog({
         </button>
       </form>
       <div className="chat-footer">
-        <span>Somente texto · Sem áudio, lembretes ou recorrência nesta versão.</span>
+        <span>A IA interpreta o pedido. A agenda valida e executa as ações.</span>
         {messages.length > 0 &&
           (confirming ? (
             <span className="chat-clear-confirm">
@@ -170,6 +170,6 @@ export function ChatDialog({
             </button>
           ))}
       </div>
-    </Dialog>
+    </section>
   );
 }

@@ -6,6 +6,12 @@ test('tema claro e escuro: a escolha persiste, o contraste vira e nada fica invi
   await page.goto('/');
   await page.getByLabel('Sua senha').fill('test-password-only');
   await page.getByRole('button', { name: 'Entrar no meu espaço' }).click();
+  // A conversa com o assistente é a tela inicial; o painel fica a um clique na navegação.
+  await expect(page.getByLabel('Sua mensagem')).toBeVisible();
+  await page
+    .getByRole('navigation')
+    .getByRole('button', { name: /^Todas as tarefas/ })
+    .click();
   await expect(page.getByRole('heading', { name: 'Todas as tarefas', exact: true })).toBeVisible();
 
   const fundo = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
@@ -40,6 +46,12 @@ test('tema claro e escuro: a escolha persiste, o contraste vira e nada fica invi
 
   // A escolha sobrevive ao recarregamento, sem piscar claro antes.
   await page.reload();
+  // A conversa com o assistente é a tela inicial; o painel fica a um clique na navegação.
+  await expect(page.getByLabel('Sua mensagem')).toBeVisible();
+  await page
+    .getByRole('navigation')
+    .getByRole('button', { name: /^Todas as tarefas/ })
+    .click();
   await expect(page.getByRole('heading', { name: 'Todas as tarefas', exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark');
   expect(luz(await fundo())).toBeLessThan(60);

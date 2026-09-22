@@ -2,7 +2,8 @@ import { before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createDatabase, db, loadState, type Database } from '../src/backend/db';
 import { chat, cleanup, panelAction, snapshot } from '../src/backend/service';
-import { authenticated, sessionToken, cronAuth, sameOrigin, cookie } from '../src/backend/auth';
+import { cronAuth, sameOrigin, cookie } from '../src/backend/auth';
+import type { Command } from '../src/backend/domain';
 
 let database: Database;
 before(async () => {
@@ -105,7 +106,7 @@ test('desfazer usa a ordem de operações persistida, não a ordem dos IDs', asy
 test('abrir painel limpa tarefas vencidas mesmo sem cron', async () => {
   await panelAction([{ op: 'create_task', title: 'Expirada' }], 'expired-create', database);
   const task = (await loadState(database)).tasks.find((t) => t.title === 'Expirada')!;
-  await panelAction([{ op: 'complete_task', task: `#${task.id}` }], 'expired-complete', database);
+  await panelAction([{ op: 'trash_task', task: `#${task.id}` }], 'expired-complete', database);
   await database.query(
     `UPDATE agenda_tasks SET data=jsonb_set(data,'{purgeAt}',to_jsonb($2::text)) WHERE id=$1`,
     [String(task.id), '2000-01-01T00:00:00.000Z'],
@@ -116,7 +117,7 @@ test('abrir painel limpa tarefas vencidas mesmo sem cron', async () => {
   );
 });
 test('limpeza conserva IDs de deduplicação e retira conteúdo pessoal após retenção', async () => {
-  await panelAction([{ op: 'complete_task', task: '#1' }], 'complete-purge', database);
+  await panelAction([{ op: 'trash_task', task: '#1' }], 'complete-purge', database);
   const at = new Date((await loadState(database)).tasks.find((t) => t.id === 1)!.purgeAt!);
   await cleanup(database, new Date(at.getTime() + 1000));
   assert.equal(
@@ -130,15 +131,6 @@ test('limpeza conserva IDs de deduplicação e retira conteúdo pessoal após re
     (await loadState(database)).tasks.some((t) => t.title === 'Mensagem única'),
     false,
   );
-});
-test('sessão adulterada e expirada são recusadas', () => {
-  process.env.SESSION_SECRET = 's'.repeat(32);
-  const token = sessionToken();
-  const request = (value: string) =>
-    new Request('http://localhost', { headers: { cookie: `agenda_session=${value}` } });
-  assert.equal(authenticated(request(token)), true);
-  assert.equal(authenticated(request(`${token}bad`)), false);
-  assert.equal(authenticated(request(sessionToken(0))), false);
 });
 test('cron exige segredo e mutações do painel exigem origem exata', () => {
   process.env.CRON_SECRET = 'i'.repeat(32);
@@ -173,4 +165,68 @@ test('Vercel bloqueia banco local efêmero e usa cookie Secure', () => {
     if (oldMode === undefined) delete process.env.DATABASE_MODE;
     else process.env.DATABASE_MODE = oldMode;
   }
+});
+
+test('reescrita da resposta é acabamento: nunca inventa, nunca derruba o que já foi gravado', async () => {
+  const creating = (title: string) => async (): Promise<Command[]> => [
+    { op: 'create_task', title },
+  ];
+  const polished = await chat(
+    'cria uma tarefa',
+    'rewrite-1',
+    database,
+    creating('Com reescrita'),
+    async (original) => `Prontinho. ${original}`,
+  );
+  assert.match(polished.reply!, /^Prontinho\. #\d+ Com reescrita/);
+  // O histórico guarda a versão que a pessoa leu, não a original.
+  const stored = (await snapshot(database)).messages as { id: string; reply: string }[];
+  assert.match(stored.find((m) => m.id === polished.id)!.reply, /^Prontinho\./);
+
+  // A tarefa é criada mesmo quando a segunda chamada falha ou não tem modelo disponível.
+  const failed = await chat('cria outra', 'rewrite-2', database, creating('Sem reescrita'), () => {
+    throw new Error('API fora do ar');
+  });
+  assert.equal(failed.status, 'done');
+  assert.match(failed.reply!, /^#\d+ Sem reescrita adicionada/);
+  const absent = await chat(
+    'cria mais uma',
+    'rewrite-3',
+    database,
+    creating('Sem modelo'),
+    async () => null,
+  );
+  assert.match(absent.reply!, /^#\d+ Sem modelo adicionada/);
+
+  // Recusa chega com as palavras da agenda: a reescrita não é chamada para suavizá-la.
+  let asked = false;
+  const refused = await chat(
+    'me manda isso por e-mail',
+    'rewrite-4',
+    database,
+    async () => [{ op: 'unsupported', question: 'Ainda não envio e-mail.' }],
+    async (original) => {
+      asked = true;
+      return `Claro! ${original}`;
+    },
+  );
+  assert.equal(refused.reply, 'Não consigo fazer isso ainda. Ainda não envio e-mail.');
+  assert.equal(asked, false);
+
+  // Desligada na configuração, a segunda chamada não acontece.
+  await panelAction([{ op: 'set_natural_reply', enabled: false }], 'natural-off', database);
+  const direct = await chat(
+    'cria a última',
+    'rewrite-5',
+    database,
+    creating('Sem segunda chamada'),
+    async () => {
+      asked = true;
+      return 'reescrita';
+    },
+  );
+  assert.match(direct.reply!, /^#\d+ Sem segunda chamada adicionada/);
+  assert.equal(asked, false);
+  assert.equal((await snapshot(database)).settings.naturalReply, false);
+  await panelAction([{ op: 'set_natural_reply', enabled: true }], 'natural-on', database);
 });
