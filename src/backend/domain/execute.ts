@@ -6,8 +6,10 @@ import {
   Ambiguity,
   DomainError,
   panelCommandsSchema,
+  type Conversation,
   type Group,
   type Command,
+  type PendingOption,
   type State,
   type Task,
 } from './types';
@@ -155,10 +157,52 @@ export function execute(
               'O grupo foi alterado em outra tela. Atualize antes de salvar.',
               409,
             );
-          if (c.op === 'delete_group' && c.deleteTasks === undefined)
-            throw new DomainError(
-              'Escolha: excluir só o grupo e manter as tarefas na Caixa de entrada, ou excluir também as tarefas.',
+          // Erro aqui encerrava o pedido: a pessoa recebia a exigência e tinha de reescrever a
+          // frase inteira com a escolha. Como pergunta pendente, a resposta seguinte retoma a
+          // exclusão de onde parou.
+          if (c.op === 'delete_group' && c.deleteTasks === undefined) {
+            const count = state.tasks.filter((t) => t.groupId === group.id).length;
+            throw new Ambiguity(
+              `O grupo ${group.name} tem ${count} tarefa(s). O que fazer com elas? Responda com o número da opção:`,
+              'deleteTasks',
+              [
+                {
+                  ref: 'false',
+                  label: 'Manter as tarefas, movendo-as para a Caixa de entrada',
+                  keywords: [
+                    'manter',
+                    'mantenha',
+                    'preservar',
+                    'preserve',
+                    'guardar',
+                    'caixa de entrada',
+                    'so o grupo',
+                    'somente o grupo',
+                    'apenas o grupo',
+                    'nao',
+                  ],
+                },
+                {
+                  ref: 'true',
+                  label: 'Enviar as tarefas para a lixeira junto com o grupo',
+                  keywords: [
+                    'excluir',
+                    'excluidas',
+                    'excluida',
+                    'excluir tambem',
+                    'apagar',
+                    'apagadas',
+                    'deletar',
+                    'lixeira',
+                    'junto',
+                    'tudo',
+                    'ambos',
+                    'sim',
+                  ],
+                },
+              ],
             );
+          }
           touchGroup(group.id);
           if (c.op === 'delete_group') {
             let count = 0;
@@ -448,6 +492,7 @@ export function execute(
       field: error.field,
       options: error.options,
       createGroup: error.createGroup,
+      question: error.message,
     };
     pendingCtx.expiresAt = new Date(now.getTime() + 30 * 60000).toISOString();
     return {
@@ -515,8 +560,35 @@ export function pendingAnswer(
           question: 'Essa opção não existe. Informe o nome ou código em um novo comando.',
         },
       ];
-    commands[p.index][p.field] = choice.ref;
-    return commands;
+    return applyChoice(commands, p, choice);
   }
-  return null;
+  const chosen = matchOption(p.options, text);
+  return chosen ? applyChoice(commands, p, chosen) : null;
+}
+
+// Quase ninguém responde “2” a uma pergunta de duas opções: responde “excluídas”, “manter”,
+// “na lixeira”. Sem isto a resposta saía da pergunta e voltava para a IA como pedido novo, e o
+// pedido original — que continua reservado aqui — nunca era retomado.
+function matchOption(options: PendingOption[], text: string): PendingOption | null {
+  const answer = normalize(text);
+  if (!answer || answer.length > 60) return null;
+  const word = (term: string) =>
+    new RegExp(
+      `(^|[^a-z0-9])${normalize(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9])`,
+    ).test(answer);
+  const matches = options.filter(
+    (option) => normalize(option.label) === answer || (option.keywords ?? []).some(word),
+  );
+  // Uma resposta que serve às duas opções (“excluir o grupo mas manter as tarefas”) não é
+  // escolha: devolver null manda a frase para a IA, com a pergunta pendente no contexto.
+  return matches.length === 1 ? matches[0] : null;
+}
+function applyChoice(
+  commands: Command[],
+  pending: NonNullable<Conversation['pending']>,
+  choice: PendingOption,
+): Command[] {
+  if (pending.field === 'deleteTasks') commands[pending.index].deleteTasks = choice.ref === 'true';
+  else commands[pending.index][pending.field] = choice.ref;
+  return commands;
 }

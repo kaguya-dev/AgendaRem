@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import {
   emptyState,
   execute,
+  pendingAnswer,
   purge,
   selectTasks,
   type State,
@@ -40,7 +41,6 @@ test('excluir grupo preserva tarefas, lixeira existente e permite desfazer', () 
 });
 test('excluir grupo com tarefas usa lixeira e é atômico, inclusive em conflitos', () => {
   const original = grouped();
-  assert.throws(() => run(original, [{ op: 'delete_group', group: 'Estudos' }]), /Escolha/);
   let state = run(original, [{ op: 'delete_group', group: 'Estudos', deleteTasks: true }]);
   assert.ok(state.tasks.every((t) => t.trashedAt && t.groupId === null));
   state = run(state, [{ op: 'restore_task', task: '#1' }], 'web');
@@ -294,4 +294,48 @@ test('reescrita da resposta só é aceita se preservar as linhas de tarefas', ()
   assert.equal(checkReply(original, 'não é json').ok, false);
   assert.equal(checkReply(original, JSON.stringify({ reply: '  ' })).ok, false);
   assert.equal(checkReply(original, JSON.stringify({ reply: 'a'.repeat(5000) })).ok, false);
+});
+
+test('excluir grupo sem dizer o destino das tarefas pergunta e retoma com a resposta', () => {
+  const original = grouped();
+  const pergunta = execute(original, [{ op: 'delete_group', group: 'Estudos' }], 'web', now);
+  // Pergunta, não erro: o pedido fica reservado à espera da escolha.
+  assert.equal(pergunta.clarification, true);
+  assert.match(pergunta.reply, /O grupo Estudos tem 2 tarefa\(s\)/);
+  assert.match(pergunta.reply, /1\. Manter as tarefas/);
+  assert.match(pergunta.reply, /2\. Enviar as tarefas para a lixeira/);
+  assert.deepEqual(pergunta.state.groups, original.groups);
+  assert.deepEqual(pergunta.state.tasks, original.tasks);
+
+  // A resposta em palavras vale tanto quanto o número — foi assim que o pedido se perdia.
+  for (const resposta of ['excluidas', 'excluídas', 'na lixeira', 'apagar', '2']) {
+    const commands = pendingAnswer(pergunta.state, resposta, 'web', now);
+    assert.deepEqual(
+      commands,
+      [{ op: 'delete_group', group: 'Estudos', deleteTasks: true }],
+      resposta,
+    );
+  }
+  for (const resposta of ['manter', 'preservar', 'caixa de entrada', '1']) {
+    const commands = pendingAnswer(pergunta.state, resposta, 'web', now);
+    assert.deepEqual(
+      commands,
+      [{ op: 'delete_group', group: 'Estudos', deleteTasks: false }],
+      resposta,
+    );
+  }
+  // Resposta que serve às duas opções, ou que é outro pedido, sai da pergunta e vai para a IA.
+  for (const resposta of ['excluir o grupo mas manter as tarefas', 'quais tarefas existem?'])
+    assert.equal(pendingAnswer(pergunta.state, resposta, 'web', now), null, resposta);
+
+  // E o pedido retomado faz o que foi pedido no começo.
+  const feito = execute(
+    pergunta.state,
+    pendingAnswer(pergunta.state, 'excluidas', 'web', now)!,
+    'web',
+    now,
+  );
+  assert.equal(feito.state.groups.length, 0);
+  assert.ok(feito.state.tasks.every((t) => t.trashedAt && t.groupId === null));
+  assert.match(feito.reply, /Grupo Estudos excluído\. 2 tarefa\(s\) na lixeira\./);
 });

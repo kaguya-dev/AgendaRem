@@ -165,7 +165,7 @@ Desfaça a última alteração
 Ajuda
 ```
 
-Essas frases valem apenas enquanto nenhum provedor de IA estiver ativo, e só neste formato exato. Com uma IA cadastrada, ela interpreta todas as mensagens e você escreve do seu jeito, como em “adicione em InfoJr a proposta até quinta”. Quando houver tarefas homônimas, responda com o número da opção. Para um grupo inexistente, “criar” confirma a criação e retoma o pedido. Um novo comando claro substitui a pergunta pendente.
+Essas frases valem apenas enquanto nenhum provedor de IA estiver ativo, e só neste formato exato. Com uma IA cadastrada, ela interpreta todas as mensagens e você escreve do seu jeito, como em “adicione em InfoJr a proposta até quinta”. Quando houver tarefas homônimas, responda com o número da opção. Para um grupo inexistente, “criar” confirma a criação e retoma o pedido. Excluir um grupo sem dizer o que fazer com as tarefas dele abre a mesma pergunta, com as duas opções reais: mantê-las na Caixa de entrada ou enviá-las à lixeira junto. Toda pergunta dessas aceita resposta em palavras — “manter”, “excluídas”, “na lixeira” — além do número, e o pedido original é retomado com a escolha; ele fica reservado por 30 minutos. Uma resposta que serve às duas opções, como “excluir o grupo mas manter as tarefas”, não é tratada como escolha: a agenda pergunta de novo. Um novo comando claro substitui a pergunta pendente.
 
 ## Atualizar a instalação anterior
 

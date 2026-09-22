@@ -62,6 +62,17 @@ export interface Operation {
   undone: boolean;
   groupChanges?: { id: string; before: Group | null; after: Group | null }[];
 }
+// Campo do comando que a resposta da pessoa vai preencher. 'deleteTasks' é booleano, e por
+// isso a escolha guarda 'true'/'false' em texto e é convertida ao retomar o pedido.
+export type PendingField = 'task' | 'group' | 'deleteTasks';
+export interface PendingOption {
+  ref: string;
+  label: string;
+  // Respostas em palavras que valem por esta opção, além do número. Sem elas, responder
+  // “excluídas” a uma pergunta de duas opções não seria reconhecido como resposta, e o pedido
+  // original se perderia.
+  keywords?: string[];
+}
 export interface Conversation {
   id: string;
   groupId: string | null;
@@ -70,9 +81,10 @@ export interface Conversation {
   pending?: {
     commands: Command[];
     index: number;
-    field: 'task' | 'group';
-    options: { ref: string; label: string }[];
+    field: PendingField;
+    options: PendingOption[];
     createGroup?: string;
+    question?: string;
   };
   lastQuery?: Command;
 }
@@ -210,8 +222,8 @@ export class DomainError extends Error {
 export class Ambiguity extends DomainError {
   constructor(
     message: string,
-    public field: 'task' | 'group',
-    public options: { ref: string; label: string }[],
+    public field: PendingField,
+    public options: PendingOption[],
     public createGroup?: string,
   ) {
     super(message);
