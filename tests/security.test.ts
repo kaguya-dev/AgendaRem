@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { createDatabase, loadState, type Database } from '../src/backend/db';
 import { login, session, revokeSession, updateAccess, accessInfo } from '../src/backend/access';
 import { totp, verifyTotp } from '../src/backend/totp';
+import { verifyPassword } from '../src/backend/auth';
 import { panelAction } from '../src/backend/service';
 import { GET, POST } from '../src/app/api/[...path]/route';
 let database: Database;
@@ -203,5 +204,34 @@ test('runtime role can perform app operations but cannot create or drop tables',
     assert.ok((await loadState(database)).tasks.some((t) => t.title === 'Least privilege'));
   } finally {
     await database.query('RESET ROLE');
+  }
+});
+
+test('hash gerado pelo script substitui a senha em texto no ambiente publicado', async () => {
+  const { execFile } = await import('node:child_process');
+  const segredo = 'senha-de-producao-2026';
+  const run = (entrada: string) =>
+    new Promise<{ code: number; out: string }>((resolve) => {
+      const child = execFile('node', ['scripts/password-hash.mjs'], (error, stdout) =>
+        resolve({ code: error ? 1 : 0, out: stdout }),
+      );
+      child.stdin!.end(`${entrada}\n`);
+    });
+  const { out } = await run(segredo);
+  const linha = out.trim();
+  assert.match(linha, /^PANEL_PASSWORD_HASH=[a-f\d]{32}:[a-f\d]{128}$/);
+  // O formato precisa ser exatamente o que o login espera.
+  process.env.PANEL_PASSWORD_HASH = linha.split('=')[1];
+  delete process.env.PANEL_PASSWORD;
+  try {
+    assert.equal(verifyPassword(segredo), true);
+    assert.equal(verifyPassword('senha errada'), false);
+    // Dois hashes da mesma senha diferem: o sal é sorteado a cada vez.
+    assert.notEqual((await run(segredo)).out.trim(), linha);
+    // Senha curta demais não gera hash.
+    assert.equal((await run('curta')).code, 1);
+  } finally {
+    delete process.env.PANEL_PASSWORD_HASH;
+    process.env.PANEL_PASSWORD = password;
   }
 });

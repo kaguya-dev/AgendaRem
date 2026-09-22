@@ -36,17 +36,29 @@ Nesse caso, o banco e o endereço vêm do `.env`; o banco local padrão fica em 
 1. No Neon, crie um projeto para a agenda ou use o banco que já contém os dados dela. No painel de conexão, selecione **Pooled connection** e copie a URL completa, preservando os parâmetros SSL. O hostname da conexão agrupada contém `-pooler`. [Conexões no Neon](https://neon.com/blog/postgres-support-case-recap).
 2. Importe o repositório na Vercel como projeto **Next.js**, com a raiz deste repositório e build `npm run build`. O projeto fixa Node.js `22.x`, versão disponível na Vercel. [Versões do Node.js](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions).
 3. Em **Settings → Environment Variables**, cadastre as variáveis da tabela abaixo para **Production**. Use valores reais, sem os marcadores dos exemplos. `npm run setup` gera os segredos localmente para você copiar de forma privada.
-4. Antes do deploy, aplique `npm run db:migrate` com a conexão administrativa e configure um usuário restrito no `DATABASE_URL` do aplicativo (veja **Permissões do banco** abaixo). Faça o deploy. Se o domínio definitivo só aparecer depois do primeiro deploy, atualize `APP_URL` com esse endereço e faça um **Redeploy** para carregar a alteração.
-5. Abra o endereço HTTPS, entre com sua senha e cadastre suas APIs de IA pelo painel. Acesse o mesmo endereço no notebook e no celular: ambos usam os mesmos dados do Neon.
+4. Antes do deploy, aplique `npm run db:migrate` com a conexão administrativa e configure um usuário restrito no `DATABASE_URL` do aplicativo (veja **Permissões do banco** abaixo).
+5. Confira a configuração antes de publicar. Escreva os valores de produção em `.env.production` — o `.gitignore` já ignora esse arquivo — e execute:
 
-| Variável             | Valor na Vercel                                                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_MODE`      | `postgres`                                                                                                                      |
-| `DATABASE_URL`       | URL de conexão agrupada do Neon, com SSL, como `postgresql://USUARIO:SENHA@SEU_HOST-pooler.neon.tech/SEU_BANCO?sslmode=require` |
-| `APP_URL`            | Origem exata do app, como `https://sua-agenda.vercel.app`; sem caminho ou barra final                                           |
-| `PANEL_PASSWORD`     | Senha inicial para acessar o painel                                                                                             |
-| `LLM_ENCRYPTION_KEY` | Chave de 32 bytes: 64 caracteres hexadecimais ou base64; preserve-a entre deploys                                               |
-| `CRON_SECRET`        | Segredo aleatório de pelo menos 32 caracteres que autentica a limpeza diária da lixeira                                         |
+   ```bash
+   npm run deploy:check
+   ```
+
+   A verificação não publica nada e não altera o banco. Ela lê o ambiente, confere formato e coerência das variáveis, conecta no banco, verifica se todas as tabelas do schema estão aplicadas, testa se a `LLM_ENCRYPTION_KEY` abre as chaves de IA já cadastradas e informa se a conexão do app ainda consegue criar ou apagar tabelas. `ERRO` impede o deploy; `AVISO` é endurecimento recomendado.
+
+6. Faça o deploy. Se o domínio definitivo só aparecer depois do primeiro deploy, atualize `APP_URL` com esse endereço e faça um **Redeploy** para carregar a alteração.
+7. Abra o endereço HTTPS, entre com sua senha e cadastre suas APIs de IA pelo painel. Acesse o mesmo endereço no notebook e no celular: ambos usam os mesmos dados do Neon.
+
+| Variável              | Valor na Vercel                                                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_MODE`       | `postgres`                                                                                                                      |
+| `DATABASE_URL`        | URL de conexão agrupada do Neon, com SSL, como `postgresql://USUARIO:SENHA@SEU_HOST-pooler.neon.tech/SEU_BANCO?sslmode=require` |
+| `APP_URL`             | Origem exata do app, como `https://sua-agenda.vercel.app`; sem caminho ou barra final                                           |
+| `PANEL_PASSWORD`      | Senha inicial para acessar o painel; dispensável se usar o hash abaixo                                                          |
+| `PANEL_PASSWORD_HASH` | Alternativa preferida à linha acima, no formato `sal:hash`, gerada por `npm run senha:hash`                                     |
+| `LLM_ENCRYPTION_KEY`  | Chave de 32 bytes: 64 caracteres hexadecimais ou base64; preserve-a entre deploys                                               |
+| `CRON_SECRET`         | Segredo aleatório de pelo menos 32 caracteres que autentica a limpeza diária da lixeira                                         |
+
+Prefira `PANEL_PASSWORD_HASH` no ambiente publicado: `npm run senha:hash` lê a senha pela entrada padrão, sem deixá-la no histórico do shell, e imprime a linha pronta para colar. Com o hash definido, remova `PANEL_PASSWORD` do projeto na Vercel — quem tiver acesso ao painel de variáveis não lerá sua senha. Trocar a senha é trocar essa variável e fazer um novo deploy.
 
 Nenhuma dessas variáveis usa prefixo `NEXT_PUBLIC_`. As chaves dos provedores de IA são cadastradas no painel e armazenadas criptografadas no banco; não vão para o código nem para as variáveis de ambiente de cada provedor. `LLM_ENCRYPTION_KEY` é a chave do servidor que permite descriptografá-las. Ela também protege o segredo do autenticador. Se for perdida ou trocada, será necessário cadastrar novamente as chaves das APIs e recuperar o acesso de duas etapas com um código de recuperação.
 
