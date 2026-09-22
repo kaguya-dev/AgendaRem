@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import { Pool } from 'pg';
 import { PGlite } from '@electric-sql/pglite';
-import { schema } from './schema';
+import { schema, usageDetailsMigration } from './schema';
 import { emptyState, type State } from './domain';
 
 export interface Sql {
@@ -57,7 +57,10 @@ export async function createDatabase(url?: string, path?: string): Promise<Datab
     close: () => pg.close(),
   };
 }
-const globalDb = globalThis as unknown as { agendaDb?: Promise<Database> };
+const globalDb = globalThis as unknown as {
+  agendaDb?: Promise<Database>;
+  agendaUsageDetails?: Promise<unknown>;
+};
 export function db(): Promise<Database> {
   if (!globalDb.agendaDb) {
     if (process.env.VERCEL === '1' && process.env.DATABASE_MODE === 'local')
@@ -72,7 +75,18 @@ export function db(): Promise<Database> {
       delete globalDb.agendaDb;
     });
   }
-  return globalDb.agendaDb;
+  return globalDb.agendaDb.then(async (connection) => {
+    // Development hot reload can keep an already-open PGlite connection. Apply this
+    // additive migration on that connection instead of opening the data directory twice.
+    if (!globalDb.agendaUsageDetails) {
+      globalDb.agendaUsageDetails = connection.query(usageDetailsMigration);
+      globalDb.agendaUsageDetails.catch(() => {
+        delete globalDb.agendaUsageDetails;
+      });
+    }
+    await globalDb.agendaUsageDetails;
+    return connection;
+  });
 }
 export async function lock(tx: Sql) {
   await tx.query('SELECT id FROM agenda_meta WHERE id=1 FOR UPDATE');

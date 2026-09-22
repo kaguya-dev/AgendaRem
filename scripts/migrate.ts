@@ -1,4 +1,4 @@
-import { db } from '../src/lib/db';
+import { db } from '../src/backend/db';
 async function main() {
   const database = await db();
   console.log('Schema do AgendaMagno pronto. Migração idempotente aplicada.');

@@ -2,7 +2,7 @@
 
 Agenda pessoal com painel e conversa no navegador, acessível pelo notebook e pelo celular. Frontend e API ficam no mesmo projeto Next.js na Vercel; os dados ficam no PostgreSQL do Neon. A conversa é processada durante a própria requisição, sem serviços de automação ou processos permanentes. Interface em português, fuso `America/Bahia` e acesso por senha de um único proprietário.
 
-Os provedores de IA, modelos, chaves, prioridades e limites são cadastrados no próprio painel. A aplicação troca de provedor quando o anterior atinge um limite ou fica indisponível. Comandos básicos continuam funcionando sem nenhuma API de IA cadastrada.
+Os provedores de IA, modelos, chaves, prioridades e limites são cadastrados no próprio painel. A aplicação troca de provedor quando o anterior atinge um limite ou fica indisponível. A IA interpreta todas as mensagens da conversa. Enquanto nenhum provedor estiver cadastrado e ativo, um modo reserva entende apenas algumas frases em formato exato.
 
 ## Testar localmente
 
@@ -79,14 +79,13 @@ Você pode adicionar até 20 modelos, do mesmo serviço ou de serviços diferent
 
 O fluxo é:
 
-1. Comandos básicos reconhecidos são resolvidos diretamente, sem gastar tokens.
-2. Pedidos que precisam de IA usam o primeiro provedor habilitado com orçamento disponível e fora da pausa temporária.
-3. Em caso de cota esgotada, erros HTTP `429`/`402` ou falha transitória, o sistema pausa esse provedor e tenta o próximo na mesma mensagem.
-4. Cada mensagem tenta no máximo quatro provedores, com orçamento de 85 segundos para as tentativas de IA. Provedores restantes podem ser usados nas próximas mensagens. Se nenhum estiver disponível, a conversa informa a indisponibilidade; nenhuma ação parcial é aplicada.
+1. Toda mensagem vai para a IA: usa o primeiro provedor habilitado, com orçamento disponível e fora da pausa temporária. Isso inclui pedidos simples como “ajuda”, que também consomem cota.
+2. Em caso de cota esgotada, erros HTTP `429`/`402` ou falha transitória, o sistema pausa esse provedor e tenta o próximo na mesma mensagem.
+3. Cada mensagem tenta no máximo quatro provedores, com orçamento de 85 segundos para as tentativas de IA. Provedores restantes podem ser usados nas próximas mensagens. Se nenhum estiver disponível, a conversa informa o motivo de cada modelo (limite local, erro da API ou pausa) e o tempo restante; nenhuma ação parcial é aplicada. Havendo IA cadastrada, o modo reserva não assume nesse caso: o pedido termina em erro e as alterações podem ser feitas pelo painel.
 
 Se uma IA responder com comandos em formato inválido, o pedido termina sem alterações e pede reformulação; nesse caso não é tentada outra interpretação automaticamente.
 
-Os limites diários usam o fuso `America/Bahia`. O uso de tokens vem dos metadados retornados pela API ou de uma estimativa conservadora quando o provedor não informa o consumo. O limite é verificado antes da chamada, mas uma chamada ainda pode ultrapassar o saldo configurado. **Liberar tentativa** retira a pausa de um provedor sem zerar seu uso diário.
+Os limites diários usam o fuso `America/Bahia`. O painel separa tokens confirmados nos metadados da API, estimativas de respostas sem contagem e registros antigos sem detalhamento. Falhas de conexão ou timeout não somam tokens: entram como tentativas sem confirmação de consumo, pois o provedor ainda pode ter processado o pedido. O limite de chamadas conta as tentativas, inclusive as que falham. Estimativas e registros antigos entram no controle local de tokens, mas não representam o saldo ou a cobrança real do provedor. O limite é verificado antes da chamada, mas uma chamada ainda pode ultrapassar o saldo configurado. **Liberar tentativa** retira a pausa de um provedor sem zerar seu uso diário. O tempo de espera por API é de até 45 segundos, dentro do orçamento total de 85 segundos. Erros HTTP 429 respeitam `Retry-After` ou `RetryInfo` do Gemini; sem orientação do provedor, a pausa é de 60 segundos. Um 429 pode indicar requisições por minuto ou por dia, mesmo quando ainda há tokens disponíveis. [Limites do Gemini](https://ai.google.dev/gemini-api/docs/rate-limits).
 
 Não existe uma consulta universal ao saldo real de todas as APIs. A troca automática depende dos limites cadastrados, do consumo observado e dos erros devolvidos pelo serviço. APIs ou modelos que compartilham a mesma cota podem ficar indisponíveis juntos. Um limite dentro da agenda não transforma uma API paga em gratuita: confira o plano e os controles de cobrança de cada provedor.
 
@@ -113,7 +112,7 @@ Defina `CRON_SECRET` em produção: a Vercel envia automaticamente `Authorizatio
 
 Áudio, lembretes automáticos, recorrência, etiquetas e contas para vários usuários continuam fora desta versão.
 
-## Comandos básicos sem IA
+## Modo reserva: quando não há IA cadastrada
 
 ```text
 Crie um grupo chamado Estudos
@@ -143,15 +142,13 @@ Desfaça a última alteração
 Ajuda
 ```
 
-O modo básico reconhece formatos definidos. Para frases fora desses formatos, cadastre uma API de IA. Quando houver tarefas homônimas, responda com o número da opção. Para um grupo inexistente, “criar” confirma a criação e retoma o pedido. Um novo comando claro substitui a pergunta pendente.
+Essas frases valem apenas enquanto nenhum provedor de IA estiver ativo, e só neste formato exato. Com uma IA cadastrada, ela interpreta todas as mensagens e você escreve do seu jeito, como em “adicione em InfoJr a proposta até quinta”. Quando houver tarefas homônimas, responda com o número da opção. Para um grupo inexistente, “criar” confirma a criação e retoma o pedido. Um novo comando claro substitui a pergunta pendente.
 
 ## Atualizar a instalação anterior
 
-Execute `npm run setup` para acrescentar os novos segredos ausentes ao `.env`. Na Vercel, cadastre-os também nas variáveis do projeto. Mantenha a mesma conexão com o banco para preservar tarefas, grupos e histórico. A inicialização acrescenta as tabelas de provedores e consumo de IA; não apaga as tabelas antigas de transporte.
+Execute `npm run setup` para acrescentar os novos segredos ausentes ao `.env`. Na Vercel, cadastre-os também nas variáveis do projeto. Mantenha a mesma conexão com o banco para preservar tarefas, grupos e histórico. A inicialização acrescenta as tabelas de provedores e consumo de IA; não apaga tabelas antigas que não sejam mais usadas.
 
-A configuração antiga de IA em variáveis `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_API_URL` e `LLM_DAILY_LIMIT` deixou de ser usada. Cadastre novamente os provedores no painel. As configurações de n8n, WAHA, WhatsApp e `INTERNAL_API_TOKEN` também deixaram de ser usadas; podem ser removidas do ambiente. Interrompa os serviços antigos caso ainda estejam rodando. Os workflows e serviços correspondentes foram retirados deste repositório.
-
-[PLANO.md](PLANO.md) fica como registro histórico: a arquitetura ali descrita foi substituída por esta versão.
+Cadastre os provedores de IA novamente no painel; variáveis de ambiente antigas para configurar IA não têm mais efeito. Remova do projeto na Vercel qualquer variável de ambiente que não apareça na tabela acima — nenhuma delas é necessária nesta versão.
 
 ## Docker local opcional
 
@@ -164,18 +161,42 @@ Abra `http://localhost:3000`. Há somente o serviço `app`; o volume `app_data` 
 
 ## Estrutura e verificações
 
+O projeto é um único deploy na Vercel, mas o código é dividido em duas pastas por responsabilidade. `src/app/` fica pequeno de propósito: é só a casca que o Next.js exige (páginas e o roteador da API), que imediatamente chama o front-end ou o backend.
+
 ```text
 iniciar.sh                    Início rápido para testar localmente
-src/app/                      Página, manifesto e API Next.js
-src/components/               Painel, conversa e configuração de IA
-src/lib/domain.ts             Regras de tarefas, contexto, lixeira e desfazer
-src/lib/db.ts                 PostgreSQL/Neon e PGlite
-src/lib/schema.ts             Schema idempotente
-src/lib/interpreter.ts        Comandos básicos e interpretação com IA
-src/lib/service.ts            Execução de ações e limpeza
+src/app/                      Casca do Next.js — só liga tudo abaixo, sem regra de negócio
+  api/[...path]/route.ts        Roteador único da API (autenticação, origem, despacho)
+  page.tsx, layout.tsx          Página e layout
+  manifest.ts                   Manifesto PWA (ícone e instalação)
+
+src/frontend/                 Interface — tudo o que roda no navegador
+  dashboard/                    Painel: tela principal e cada diálogo em seu próprio arquivo
+  llm-settings.tsx              Cadastro de provedores de IA no painel
+
+src/backend/                  Regras, dados e integrações — nada de JSX aqui
+  domain/                       Regras puras: tipos, comandos, busca de tarefas/grupos, lixeira
+    types.ts                      Tipos de estado e o schema dos comandos
+    format.ts                     Data, fuso e rótulos
+    lookup.ts                     Resolução de referências ("essa tarefa", "#3", nome de grupo)
+    execute.ts                    Executor de comandos (cria, edita, desfaz…)
+    purge.ts                      Exclusão definitiva após a retenção
+  llm/                          Integração com IA, por responsabilidade
+    ssrf.ts                        Só hosts HTTPS públicos; DNS preso ao socket da requisição
+    crypto.ts                      Criptografia AES-256-GCM das chaves salvas
+    providers.ts                   Cadastro de provedores (listar/salvar/excluir/reativar)
+    usage.ts                       Limite diário por provedor e pausa após erro
+    generate.ts                    Laço de troca: tenta os provedores em ordem de prioridade
+  db.ts                         PostgreSQL/Neon e PGlite
+  schema.ts                     Schema idempotente
+  interpreter.ts                Interpretação com IA e o modo reserva sem IA
+  service.ts                    Execução de ações e limpeza
+
 vercel.json                   Limpeza diária em produção
 tests/                        Testes de regras, integração e navegador
 ```
+
+O front-end só fala com o backend por `fetch('/api/...')`; nunca importa nada de `src/backend/` diretamente, e o navegador nunca vê chave de banco ou de IA.
 
 ```bash
 npm test

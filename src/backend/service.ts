@@ -49,7 +49,8 @@ export async function snapshot(database?: Database) {
     const messages = (
       await tx.query(
         `SELECT id,channel,body,reply,status,error,created_at FROM agenda_messages
-         WHERE channel IN ('web','panel','simulator') ORDER BY received_at DESC,id DESC LIMIT 50`,
+         WHERE channel IN ('web','panel') AND (body IS NOT NULL OR reply IS NOT NULL)
+         ORDER BY received_at DESC,id DESC LIMIT 50`,
       )
     ).rows;
     return {
@@ -79,7 +80,13 @@ export async function panelAction(commands: unknown, requestId: string, database
     await saveState(tx, before, result.state);
     await tx.query(
       'INSERT INTO agenda_messages(id,external_id,channel,reply,status) VALUES($1,$2,$3,$4,$5)',
-      [randomUUID(), `panel:${requestId}`, 'panel', result.reply, result.clarification ? 'clarification' : 'done'],
+      [
+        randomUUID(),
+        `panel:${requestId}`,
+        'panel',
+        result.reply,
+        result.clarification ? 'clarification' : 'done',
+      ],
     );
     return { reply: result.reply, clarification: result.clarification };
   });
@@ -102,7 +109,9 @@ export async function chat(
     await lock(tx);
     await expireInterrupted(tx);
     const existing = (
-      await tx.query<Message>('SELECT * FROM agenda_messages WHERE external_id=$1', [`web:${requestId}`])
+      await tx.query<Message>('SELECT * FROM agenda_messages WHERE external_id=$1', [
+        `web:${requestId}`,
+      ])
     ).rows[0];
     if (existing) {
       if (existing.body !== null && existing.body !== text)
@@ -113,16 +122,25 @@ export async function chat(
       "SELECT id FROM agenda_messages WHERE channel='web' AND status='processing' LIMIT 1",
     );
     if (busy.rows.length)
-      throw new DomainError('O assistente está respondendo a outro pedido. Aguarde a resposta e tente novamente.', 409);
+      throw new DomainError(
+        'O assistente está respondendo a outro pedido. Aguarde a resposta e tente novamente.',
+        409,
+      );
     const { state } = await currentState(tx);
     const now = new Date();
     const message: Message = {
-      id: randomUUID(), external_id: `web:${requestId}`, channel: 'web', body: text,
-      reply: null, error: null, status: 'processing', created_at: now,
+      id: randomUUID(),
+      external_id: `web:${requestId}`,
+      channel: 'web',
+      body: text,
+      reply: null,
+      error: null,
+      status: 'processing',
+      created_at: now,
     };
     await tx.query(
-      `INSERT INTO agenda_messages(id,external_id,channel,body,status,attempts,lease_token,lease_until,created_at)
-       VALUES($1,$2,'web',$3,'processing',1,$4,now()+interval '150 seconds',$5)`,
+      `INSERT INTO agenda_messages(id,external_id,channel,body,status,lease_token,lease_until,created_at)
+       VALUES($1,$2,'web',$3,'processing',$4,now()+interval '150 seconds',$5)`,
       [message.id, message.external_id, text, token, now.toISOString()],
     );
     return { message, state };
@@ -130,7 +148,13 @@ export async function chat(
   if (claimed.prior) return response(claimed.prior);
   const { message, state } = claimed;
   try {
-    const commands = await interpreter(state, text, 'web', new Date(message.created_at), connection);
+    const commands = await interpreter(
+      state,
+      text,
+      'web',
+      new Date(message.created_at),
+      connection,
+    );
     return await connection.transaction(async (tx) => {
       await lock(tx);
       const active = await tx.query(
@@ -140,7 +164,10 @@ export async function chat(
       if (!active.rows.length) throw new DomainError(interrupted, 409);
       const { state: before } = await currentState(tx);
       if (before.settings.revision !== state.settings.revision)
-        throw new DomainError('Os dados mudaram durante a interpretação. Nenhuma ação deste pedido foi aplicada; reenvie a mensagem.', 409);
+        throw new DomainError(
+          'Os dados mudaram durante a interpretação. Nenhuma ação deste pedido foi aplicada; reenvie a mensagem.',
+          409,
+        );
       const result = execute(before, commands, 'web');
       await saveState(tx, before, result.state);
       const status = result.clarification ? 'clarification' : 'done';
@@ -151,9 +178,10 @@ export async function chat(
       return { id: message.id, status, reply: result.reply, error: null };
     });
   } catch (error) {
-    const safe = error instanceof DomainError
-      ? error.message
-      : 'Não foi possível processar o pedido. Nenhuma alteração foi confirmada.';
+    const safe =
+      error instanceof DomainError
+        ? error.message
+        : 'Não foi possível processar o pedido. Nenhuma alteração foi confirmada.';
     await connection.query(
       `UPDATE agenda_messages SET status='failed',error=$3,lease_token=NULL,lease_until=NULL,updated_at=now()
        WHERE id=$1 AND status='processing' AND lease_token=$2`,
@@ -161,6 +189,24 @@ export async function chat(
     );
     return { id: message.id, status: 'failed', reply: null, error: safe };
   }
+}
+export async function clearChat(database?: Database) {
+  const connection = database ?? (await db());
+  return connection.transaction(async (tx) => {
+    await lock(tx);
+    await expireInterrupted(tx);
+    // As linhas ficam, sem texto: o external_id é o que impede um pedido repetido de executar
+    // duas vezes. A listagem esconde mensagens sem texto, então a conversa some da tela.
+    const cleared = await tx.query(
+      `UPDATE agenda_messages SET body=NULL,reply=NULL,error=NULL,updated_at=now()
+       WHERE channel='web' AND status<>'processing'
+         AND (body IS NOT NULL OR reply IS NOT NULL OR error IS NOT NULL)
+       RETURNING id`,
+    );
+    // Sem isso o assistente continuaria lembrando do grupo e das tarefas recentes.
+    await tx.query("DELETE FROM agenda_conversations WHERE id='web'");
+    return { cleared: cleared.rows.length };
+  });
 }
 export async function cleanup(database?: Database, now = new Date()) {
   const connection = database ?? (await db());

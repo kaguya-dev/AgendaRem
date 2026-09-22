@@ -13,6 +13,10 @@ export interface PublicLlmProvider {
   keySet: boolean;
   requestsToday: number;
   tokensToday: number;
+  reportedTokensToday: number;
+  estimatedTokensToday: number;
+  legacyTokensToday: number;
+  unconfirmedRequestsToday: number;
   cooldownUntil: string | null;
   lastError: string | null;
 }

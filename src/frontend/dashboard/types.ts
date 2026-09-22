@@ -1,0 +1,32 @@
+import type { Command, Group, History, Task } from '@/backend/domain';
+
+export type View =
+  'all' | 'inbox' | 'today' | 'overdue' | 'no_date' | 'completed' | 'trash' | `group:${string}`;
+export type Message = {
+  id: string;
+  channel: string;
+  body: string | null;
+  reply: string | null;
+  status: string;
+  error: string | null;
+  created_at: string;
+};
+export type Data = {
+  tasks: Task[];
+  groups: Group[];
+  history: History[];
+  settings: { retentionDays: number };
+  messages: Message[];
+  llm: string;
+  storage: string;
+};
+export type Modal =
+  | { type: 'task'; task?: Task }
+  | { type: 'group'; group?: Group }
+  | { type: 'settings' }
+  | { type: 'llm' }
+  | { type: 'chat' }
+  | { type: 'activity' }
+  | null;
+
+export type Action = (commands: Command[], close?: boolean) => Promise<boolean>;

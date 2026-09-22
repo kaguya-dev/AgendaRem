@@ -9,8 +9,8 @@ import {
   localDate,
   type State,
   type Command,
-} from '../src/lib/domain';
-import { basicInterpret } from '../src/lib/interpreter';
+} from '../src/backend/domain';
+import { basicInterpret } from '../src/backend/interpreter';
 
 const start = new Date('2026-09-16T15:00:00Z');
 function run(state: State, commands: Command[], channel = 'test', now = start) {
@@ -255,4 +255,11 @@ test('comandos básicos interpretam português e datas relativas sem LLM', () =>
     3,
   );
   assert.equal(basicInterpret('Me lembre amanhã de fazer isso'), null);
+});
+test('pedido com dois comandos encadeados por "e" não é resolvido por um padrão básico só', () => {
+  assert.equal(
+    basicInterpret('crie um grupo chamado infojr e adicione a tarefa chamada proposta'),
+    null,
+  );
+  assert.equal(basicInterpret('exclua #1 e restaure #2'), null);
 });

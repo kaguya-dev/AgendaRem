@@ -72,8 +72,6 @@ test('painel completo: login, grupo, tarefa, edição, conclusão, restauração
 test('rotas privadas não aceitam requisições anônimas', async ({ request }) => {
   expect((await request.get('/api/state')).status()).toBe(401);
   expect((await request.post('/api/actions', { data: { commands: [] } })).status()).toBe(401);
-  expect((await request.post('/api/internal/process')).status()).toBe(404);
-  expect((await request.post('/api/waha', { data: { event: 'message' } })).status()).toBe(404);
   expect((await request.get('/api/llm-providers')).status()).toBe(401);
   expect((await request.post('/api/llm-providers', { data: {} })).status()).toBe(401);
   expect((await request.post('/api/chat', { data: {} })).status()).toBe(401);

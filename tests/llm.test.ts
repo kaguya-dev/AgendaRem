@@ -1,8 +1,8 @@
 import { before, after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createDatabase, type Database } from '../src/lib/db';
-import { emptyState, DomainError, localDate } from '../src/lib/domain';
-import { interpret } from '../src/lib/interpreter';
+import { createDatabase, loadState, type Database } from '../src/backend/db';
+import { emptyState, DomainError, localDate } from '../src/backend/domain';
+import { interpret } from '../src/backend/interpreter';
 import {
   deleteProvider,
   generateCommands,
@@ -12,8 +12,8 @@ import {
   saveProvider,
   validateApiUrl,
   type LlmRequestOptions,
-} from '../src/lib/llm';
-import type { SaveLlmProviderInput } from '../src/lib/llm-types';
+} from '../src/backend/llm';
+import type { SaveLlmProviderInput } from '../src/backend/llm-types';
 
 let database: Database;
 const config = (overrides: Partial<SaveLlmProviderInput> = {}): SaveLlmProviderInput => ({
@@ -140,7 +140,7 @@ test('429 troca por prioridade, respeita Retry-After e não divulga corpo de err
   assert.deepEqual(result, [{ op: 'create_task', title: 'Estudar' }]);
   const status = (await listProviders(database)).providers;
   assert.equal(status[0].requestsToday, 1);
-  assert.match(status[0].lastError!, /Limite/);
+  assert.match(status[0].lastError!, /HTTP 429/);
   assert.ok(new Date(status[0].cooldownUntil!).getTime() > Date.now() + 3500000);
   assert.equal(status[1].tokensToday, 47);
   assert.ok(!JSON.stringify(status).includes('secret-first-provider'));
@@ -199,7 +199,7 @@ test('reservas transacionais impedem exceder o limite de requisições em chamad
   await ready;
   await assert.rejects(
     generateCommands('system', 'second', database, { fetch: sender }),
-    /sem cota ou indisponíveis/,
+    /Limite diário de chamadas do app/,
   );
   release();
   await first;
@@ -253,6 +253,203 @@ test('resposta JSON ou comandos inválidos interrompem sem tentar outra IA nem a
   assert.equal((await database.query('SELECT * FROM agenda_tasks')).rows.length, 0);
 });
 
+test('JSON entre cercas de markdown ou com texto em volta ainda é aceito', async () => {
+  await saveProvider(config(), database);
+  const object = JSON.stringify({ commands: [{ op: 'create_task', title: 'Proposta' }] });
+  for (const content of [
+    '```json\n' + object + '\n```',
+    'Claro! Aqui está:\n' + object,
+    object + '\n\nPosso ajudar em algo mais?',
+  ]) {
+    for (const item of (await listProviders(database)).providers)
+      await resetProvider(item.id, database);
+    const commands = await generateCommands('system', 'message', database, {
+      fetch: async () =>
+        Response.json({ choices: [{ message: { content } }], usage: { total_tokens: 8 } }),
+    });
+    assert.deepEqual(commands, [{ op: 'create_task', title: 'Proposta' }]);
+  }
+});
+
+test('falha de formato diz qual etapa quebrou, sem repetir o texto do modelo', async () => {
+  await saveProvider(config(), database);
+  const cases: [unknown, RegExp][] = [
+    [{ choices: [{ message: { content: '' } }] }, /sem texto/],
+    [{ choices: [{ message: { content: 'desculpe, não posso' } }] }, /não em JSON|texto, n/],
+    [{ choices: [{ message: { content: '{"resposta":"ok"}' } }] }, /sem a lista de ações/],
+  ];
+  for (const [body, expected] of cases) {
+    for (const item of (await listProviders(database)).providers)
+      await resetProvider(item.id, database);
+    await assert.rejects(
+      generateCommands('system', 'message', database, { fetch: async () => Response.json(body) }),
+      (error: unknown) =>
+        error instanceof DomainError && error.status === 422 && expected.test(error.message),
+    );
+    const [provider] = (await listProviders(database)).providers;
+    assert.match(provider.lastError!, expected);
+    assert.doesNotMatch(provider.lastError!, /desculpe|resposta/);
+  }
+});
+
+test('comando com chave errada ou campo extra diz qual ação e qual campo falhou', async () => {
+  await saveProvider(config(), database);
+  const cases: [unknown, RegExp][] = [
+    // O modelo chuta o nome da chave da operação em vez de "op".
+    [[{ action: 'create_group', name: 'InfoJr' }], /ação 1.*(op|não previsto action)/],
+    // O modelo aninha os campos, como em function calling.
+    [[{ name: 'create_group', arguments: { name: 'InfoJr' } }], /ação 1.*arguments|ação 1.*op/],
+    // A saudação convida o modelo a pendurar uma resposta social no comando.
+    [
+      [{ op: 'create_group', name: 'InfoJr', message: 'Olá! Criei o grupo InfoJr.' }],
+      /ação 1: campo não previsto message/,
+    ],
+  ];
+  for (const [commands, expected] of cases) {
+    for (const item of (await listProviders(database)).providers)
+      await resetProvider(item.id, database);
+    await assert.rejects(
+      generateCommands('system', 'message', database, {
+        fetch: async () =>
+          Response.json({
+            choices: [{ message: { content: JSON.stringify({ commands }) } }],
+            usage: { total_tokens: 8 },
+          }),
+      }),
+      (error: unknown) =>
+        error instanceof DomainError && error.status === 422 && expected.test(error.message),
+    );
+    const [provider] = (await listProviders(database)).providers;
+    assert.match(provider.lastError!, expected);
+    // O texto que o modelo escreveu nunca entra na mensagem: pode repetir dado pessoal.
+    assert.doesNotMatch(provider.lastError!, /InfoJr|Olá/);
+  }
+});
+
+test('o prompt leva as últimas 3 trocas da conversa, cortadas e só dentro da janela', async () => {
+  await saveProvider(config(), database);
+  const agora = new Date();
+  const antiga = new Date(agora.getTime() - 45 * 60000).toISOString();
+  // Quatro trocas dentro da janela (só as 3 últimas devem ir) e uma fora dela.
+  for (const [i, texto] of ['alfa', 'beta', 'gama', 'delta'].entries())
+    await database.query(
+      `INSERT INTO agenda_messages(id,external_id,channel,body,reply,status,received_at)
+       VALUES($1,$2,'web',$3,$4,'done',now() - ($5 || ' seconds')::interval)`,
+      [`mem-${i}`, `web:mem-${i}`, texto, `resposta ${texto}`, String((4 - i) * 10)],
+    );
+  await database.query(
+    `INSERT INTO agenda_messages(id,external_id,channel,body,reply,status,received_at)
+     VALUES('mem-velha','web:mem-velha','web','mensagem velha','resposta velha','done',$1)`,
+    [antiga],
+  );
+  await database.query(
+    `INSERT INTO agenda_messages(id,external_id,channel,body,reply,status,received_at)
+     VALUES('mem-longa','web:mem-longa','web',$1,NULL,'done',now())`,
+    ['x'.repeat(900)],
+  );
+  let enviado = '';
+  await interpret(emptyState(), 'muda pra sexta', 'web', agora, database, {
+    fetch: async (_url, init) => {
+      enviado = JSON.parse(String(init.body)).messages[0].content;
+      return Response.json({
+        choices: [{ message: { content: '{"commands":[{"op":"help"}]}' } }],
+        usage: { total_tokens: 5 },
+      });
+    },
+  });
+  assert.match(enviado, /Conversa recente/);
+  // Só as 3 mais recentes: "alfa" ficou de fora.
+  assert.doesNotMatch(enviado, /alfa/);
+  assert.match(enviado, /delta/);
+  assert.match(enviado, /gama/);
+  // Fora da janela de 30 minutos não entra.
+  assert.doesNotMatch(enviado, /mensagem velha/);
+  // Cada mensagem entra cortada.
+  assert.doesNotMatch(enviado, /x{500}/);
+});
+
+test('apagar a conversa some com o texto, preserva a dedup e esquece o contexto', async () => {
+  const { chat, clearChat, snapshot } = await import('../src/backend/service');
+  const feito = await chat('Anota: segredo pessoal', 'limpar-1', database);
+  assert.equal(feito.status, 'done');
+  assert.equal(
+    (await snapshot(database)).messages.some((m) =>
+      String(m.body ?? '').includes('segredo pessoal'),
+    ),
+    true,
+  );
+  const limpo = await clearChat(database);
+  assert.ok(limpo.cleared >= 1);
+  const depois = await snapshot(database);
+  assert.equal(
+    depois.messages.some((m) => String(m.body ?? '').includes('segredo pessoal')),
+    false,
+  );
+  // A linha continua existindo: repetir o mesmo requestId não pode criar a tarefa de novo.
+  const antes = (await loadState(database)).tasks.length;
+  await chat('Anota: segredo pessoal', 'limpar-1', database);
+  assert.equal((await loadState(database)).tasks.length, antes);
+  // E o assistente não leva mais a conversa apagada para o modelo.
+  await saveProvider(config(), database);
+  let enviado = '';
+  await interpret(emptyState(), 'e agora?', 'web', new Date(), database, {
+    fetch: async (_url, init) => {
+      enviado = JSON.parse(String(init.body)).messages[0].content;
+      return Response.json({
+        choices: [{ message: { content: '{"commands":[{"op":"help"}]}' } }],
+        usage: { total_tokens: 5 },
+      });
+    },
+  });
+  assert.doesNotMatch(enviado, /segredo pessoal/);
+  // O banco é compartilhado entre os testes deste arquivo, que assumem agenda vazia.
+  await database.query('DELETE FROM agenda_tasks');
+  await database.query("DELETE FROM agenda_messages WHERE channel='web'");
+});
+
+test('o prompt entrega a semana já resolvida e manda o prazo sair do título', async () => {
+  await saveProvider(config(), database);
+  let enviado = '';
+  // 21/09/2026 é uma segunda-feira; a quinta seguinte é 24/09/2026.
+  await interpret(
+    emptyState(),
+    'adicione em infojr proposta até quinta',
+    'web',
+    new Date('2026-09-21T15:00:00-03:00'),
+    database,
+    {
+      fetch: async (_url, init) => {
+        enviado = JSON.parse(String(init.body)).messages[0].content;
+        return Response.json({
+          choices: [{ message: { content: '{"commands":[{"op":"help"}]}' } }],
+          usage: { total_tokens: 5 },
+        });
+      },
+    },
+  );
+  assert.match(enviado, /segunda-feira 2026-09-21 \(hoje\)/);
+  assert.match(enviado, /terça-feira 2026-09-22 \(amanhã\)/);
+  assert.match(enviado, /quinta-feira 2026-09-24/);
+  assert.match(enviado, /SAI do título/);
+});
+
+test('o prompt mostra ao modelo a chave "op" e um exemplo literal de resposta', async () => {
+  await saveProvider(config(), database);
+  let sent = '';
+  await interpret(emptyState(), 'olá, crie um grupo chamado InfoJr', 'web', new Date(), database, {
+    fetch: async (_url, init) => {
+      sent = JSON.parse(String(init.body)).messages[0].content;
+      return Response.json({
+        choices: [{ message: { content: '{"commands":[{"op":"create_group","name":"InfoJr"}]}' } }],
+        usage: { total_tokens: 8 },
+      });
+    },
+  });
+  assert.match(sent, /"op"/);
+  assert.match(sent, /\{"commands":\[\{"op":"create_group"/);
+  assert.match(sent, /clarify/);
+});
+
 test('Gemini usa chave no cabeçalho, lê metadados e ignora partes de raciocínio', async () => {
   await saveProvider(
     config({ kind: 'gemini', model: 'models/gemini-example', apiUrl: '' }),
@@ -302,7 +499,52 @@ test('todos indisponíveis falham com mensagem segura e tentativas limitadas', a
   assert.equal((await database.query('SELECT * FROM agenda_tasks')).rows.length, 0);
 });
 
-test('comandos básicos funcionam sem configuração e não consomem cota', async () => {
+test('com IA cadastrada, mesmo frases em formato conhecido vão para a IA', async () => {
+  await saveProvider(config(), database);
+  // A regex de "adicione" resolveria isto ao pé da letra: criaria uma tarefa chamada
+  // "em infojr proposta até quinta", sem grupo e sem prazo. A IA precisa receber a frase.
+  const frase = 'adicione em infojr proposta até quinta';
+  let enviado = '';
+  const commands = await interpret(emptyState(), frase, 'web', new Date(), database, {
+    fetch: async (_url, init) => {
+      enviado = JSON.parse(String(init.body)).messages[1].content;
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                commands: [
+                  { op: 'create_task', title: 'proposta', group: 'infojr', dueDate: '2026-09-24' },
+                ],
+              }),
+            },
+          },
+        ],
+        usage: { total_tokens: 12 },
+      });
+    },
+  });
+  assert.equal(enviado, frase);
+  assert.deepEqual(commands, [
+    { op: 'create_task', title: 'proposta', group: 'infojr', dueDate: '2026-09-24' },
+  ]);
+  // Formatos exatos e triviais também passam a consultar a IA.
+  for (const trivial of ['ajuda', 'Anota: comprar pilhas', 'Finalizei #1']) {
+    let chamou = false;
+    await interpret(emptyState(), trivial, 'web', new Date(), database, {
+      fetch: async () => {
+        chamou = true;
+        return Response.json({
+          choices: [{ message: { content: '{"commands":[{"op":"help"}]}' } }],
+          usage: { total_tokens: 5 },
+        });
+      },
+    });
+    assert.equal(chamou, true, `"${trivial}" deveria consultar a IA`);
+  }
+});
+
+test('sem nenhuma IA cadastrada, os formatos exatos ainda respondem', async () => {
   const commands = await interpret(
     emptyState(),
     'Anota: Comprar pilhas',
@@ -332,4 +574,163 @@ test('reservas de tokens abandonadas expiram e não bloqueiam o provedor pelo re
     fetch: async () => success(),
   });
   assert.equal(commands?.[0].op, 'create_task');
+});
+
+test('timeout não vira falta de cota nem soma estimativa como consumo confirmado', async () => {
+  await saveProvider(config({ dailyTokenLimit: 250000 }), database);
+  const now = new Date();
+  await generateCommands('system', 'primeira mensagem', database, {
+    fetch: async () => success(5000),
+    now,
+  });
+  await assert.rejects(
+    generateCommands('system', 'segunda mensagem', database, {
+      now,
+      fetch: async (_url, init) => {
+        assert.equal(init.signal?.aborted, false);
+        throw new DOMException('private request data', 'TimeoutError');
+      },
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof DomainError);
+      assert.match(error.message, /demorou além do tempo/);
+      assert.match(error.message, /Nova tentativa em 1 min/);
+      assert.doesNotMatch(error.message, /sem cota|250\.000|private request/);
+      return true;
+    },
+  );
+  const [provider] = (await listProviders(database)).providers;
+  assert.equal(provider.tokensToday, 5000);
+  assert.equal(provider.reportedTokensToday, 5000);
+  assert.equal(provider.estimatedTokensToday, 0);
+  assert.equal(provider.unconfirmedRequestsToday, 1);
+  assert.equal(provider.requestsToday, 2);
+  const usage = (
+    await database.query<{ reserved_tokens: string }>(
+      'SELECT reserved_tokens FROM agenda_llm_usage',
+    )
+  ).rows[0];
+  assert.equal(Number(usage.reserved_tokens), 0);
+  let called = false;
+  await assert.rejects(
+    generateCommands('system', 'durante pausa', database, {
+      now: new Date(now.getTime() + 10000),
+      fetch: async () => {
+        called = true;
+        return success();
+      },
+    }),
+    /demorou além do tempo.*Nova tentativa em \d+ s/,
+  );
+  assert.equal(called, false);
+  const resumed = await generateCommands('system', 'depois da pausa', database, {
+    now: new Date(now.getTime() + 65000),
+    fetch: async () => success(15),
+  });
+  assert.equal(resumed?.[0].op, 'create_task');
+});
+
+test('erro de rede permite fallback sem inflar contagem e sem vazar mensagem upstream', async () => {
+  await saveProvider(config(), database);
+  await saveProvider(config({ name: 'Reserva', priority: 2 }), database);
+  let calls = 0;
+  await generateCommands('system', 'message', database, {
+    fetch: async () => {
+      if (++calls === 1) throw new Error('secret-first-provider');
+      return success(7);
+    },
+  });
+  const [first, second] = (await listProviders(database)).providers;
+  assert.equal(first.tokensToday, 0);
+  assert.equal(first.unconfirmedRequestsToday, 1);
+  assert.equal(second.reportedTokensToday, 7);
+  assert.match(first.lastError!, /Falha de conexão/);
+  assert.doesNotMatch(first.lastError!, /secret-first/);
+});
+
+test('429 sem Retry-After pausa por um minuto e explica limites de frequência', async () => {
+  await saveProvider(config(), database);
+  const now = new Date();
+  await assert.rejects(
+    generateCommands('system', 'message', database, {
+      now,
+      fetch: async () => fail(429),
+    }),
+    /HTTP 429.*por minuto ou por dia/,
+  );
+  const [provider] = (await listProviders(database)).providers;
+  const delay = new Date(provider.cooldownUntil!).getTime() - now.getTime();
+  assert.ok(delay >= 60000 && delay < 65000);
+  assert.equal(provider.tokensToday, 0);
+});
+
+test('429 Gemini respeita RetryInfo sem divulgar detalhes da requisição', async () => {
+  await saveProvider(config({ kind: 'gemini', apiUrl: '' }), database);
+  const now = new Date();
+  await assert.rejects(
+    generateCommands('system', 'message', database, {
+      now,
+      fetch: async () =>
+        Response.json(
+          {
+            error: {
+              message: 'secret',
+              details: [
+                { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '8.5s' },
+              ],
+            },
+          },
+          { status: 429 },
+        ),
+    }),
+    /Nova tentativa em 9 s/,
+  );
+  const [provider] = (await listProviders(database)).providers;
+  assert.doesNotMatch(provider.lastError!, /secret/);
+  const delay = new Date(provider.cooldownUntil!).getTime() - now.getTime();
+  assert.ok(delay >= 8500 && delay < 10000);
+});
+
+test('limite local de tokens informa números e não é confundido com o saldo da API', async () => {
+  await saveProvider(config({ dailyTokenLimit: 100 }), database);
+  await generateCommands('system', 'message', database, { fetch: async () => success(120) });
+  let calls = 0;
+  await assert.rejects(
+    generateCommands('system', 'message', database, {
+      fetch: async () => {
+        calls++;
+        return success();
+      },
+    }),
+    /Limite diário de tokens do app atingido \(120\/100\).*não consulta o saldo/,
+  );
+  assert.equal(calls, 0);
+});
+
+test('resposta sem metadados recebe estimativa separada, sem cobrar o máximo de saída', async () => {
+  await saveProvider(config(), database);
+  await generateCommands('system', 'message', database, {
+    fetch: async () =>
+      Response.json({
+        choices: [{ message: { content: '{"commands":[{"op":"help"}]}' } }],
+      }),
+  });
+  const [provider] = (await listProviders(database)).providers;
+  assert.equal(provider.reportedTokensToday, 0);
+  assert.ok(provider.estimatedTokensToday > 0 && provider.estimatedTokensToday < 100);
+  assert.equal(provider.tokensToday, provider.estimatedTokensToday);
+});
+
+test('migração preserva contadores antigos e identifica que não são consumo confirmado', async () => {
+  const provider = (await saveProvider(config(), database)).providers[0];
+  await database.query(
+    'INSERT INTO agenda_llm_usage(provider_id,day,requests,tokens) VALUES($1,$2,17,45991)',
+    [provider.id, localDate(new Date())],
+  );
+  await generateCommands('system', 'message', database, { fetch: async () => success(10) });
+  const [saved] = (await listProviders(database)).providers;
+  assert.equal(saved.tokensToday, 46001);
+  assert.equal(saved.legacyTokensToday, 45991);
+  assert.equal(saved.reportedTokensToday, 10);
+  assert.equal(saved.estimatedTokensToday, 0);
 });

@@ -11,7 +11,7 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react';
-import type { PublicLlmProvider } from '@/lib/llm-types';
+import type { PublicLlmProvider } from '@/backend/llm-types';
 
 type ProviderForm = {
   id?: string;
@@ -61,16 +61,15 @@ const date = (value: string) =>
     timeStyle: 'short',
     timeZone: 'America/Bahia',
   }).format(new Date(value));
-function providerStatus(provider: PublicLlmProvider): string {
+function providerStatus(provider: PublicLlmProvider, now: number): string {
   if (!provider.enabled) return 'Desativado';
   if (!provider.keySet) return 'Sem chave';
   if (
     provider.requestsToday >= provider.dailyRequestLimit ||
     (provider.dailyTokenLimit > 0 && provider.tokensToday >= provider.dailyTokenLimit)
   )
-    return 'Limite diário atingido';
-  if (provider.cooldownUntil && new Date(provider.cooldownUntil).getTime() > Date.now())
-    return 'Em pausa';
+    return 'Limite diário do app atingido';
+  if (provider.cooldownUntil && new Date(provider.cooldownUntil).getTime() > now) return 'Em pausa';
   return 'Disponível';
 }
 
@@ -82,6 +81,11 @@ export default function LlmSettings({ onChange }: { onChange: () => Promise<void
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
   const load = useCallback(async () => {
     const result = await request<{ providers: PublicLlmProvider[] }>();
     setProviders([...result.providers].sort((a, b) => a.priority - b.priority));
@@ -164,8 +168,8 @@ export default function LlmSettings({ onChange }: { onChange: () => Promise<void
         cota, limitar as chamadas ou falhar, ele tenta o próximo disponível.
       </p>
       <p className="field-help">
-        Comandos básicos, como criar e listar tarefas, não consomem IA. Cadastre o identificador do
-        modelo e a chave fornecidos pela sua API.
+        Toda mensagem enviada ao assistente passa por um destes modelos e conta nos limites diários.
+        Cadastre o identificador do modelo e a chave fornecidos pela sua API.
       </p>
       {error && (
         <p className="form-error" role="alert">
@@ -221,7 +225,7 @@ export default function LlmSettings({ onChange }: { onChange: () => Promise<void
           )}
           <div className="llm-provider-list">
             {providers.map((provider) => {
-              const status = providerStatus(provider);
+              const status = providerStatus(provider, now);
               return (
                 <article className="llm-provider" key={provider.id}>
                   <div className="llm-provider-heading">
@@ -239,13 +243,13 @@ export default function LlmSettings({ onChange }: { onChange: () => Promise<void
                   </div>
                   <dl className="llm-usage">
                     <div>
-                      <dt>Chamadas hoje</dt>
+                      <dt>Tentativas hoje</dt>
                       <dd>
                         {number(provider.requestsToday)} / {number(provider.dailyRequestLimit)}
                       </dd>
                     </div>
                     <div>
-                      <dt>Tokens hoje</dt>
+                      <dt>Uso local de tokens hoje</dt>
                       <dd>
                         {number(provider.tokensToday)}
                         {provider.dailyTokenLimit > 0
@@ -254,10 +258,32 @@ export default function LlmSettings({ onChange }: { onChange: () => Promise<void
                       </dd>
                     </div>
                   </dl>
-                  {provider.cooldownUntil &&
-                    new Date(provider.cooldownUntil).getTime() > Date.now() && (
-                      <p className="llm-provider-note">Pausa até {date(provider.cooldownUntil)}.</p>
-                    )}
+                  <p className="llm-provider-note">
+                    {number(provider.reportedTokensToday ?? 0)} confirmados pela API
+                    {' · '}
+                    {number(provider.estimatedTokensToday ?? 0)} estimados em respostas sem
+                    contagem.
+                  </p>
+                  {provider.legacyTokensToday > 0 && (
+                    <p className="llm-provider-note">
+                      {number(provider.legacyTokensToday)} do registro anterior, sem separação entre
+                      consumo e estimativas. Esse valor não representa consumo confirmado pela API.
+                    </p>
+                  )}
+                  {provider.unconfirmedRequestsToday > 0 && (
+                    <p className="llm-provider-note">
+                      {number(provider.unconfirmedRequestsToday)} tentativa(s) sem confirmação de
+                      consumo. Nenhum token foi somado por essas falhas; o provedor ainda pode ter
+                      processado o pedido.
+                    </p>
+                  )}
+                  {provider.cooldownUntil && new Date(provider.cooldownUntil).getTime() > now && (
+                    <p className="llm-provider-note">
+                      Pausa por mais{' '}
+                      {Math.ceil((new Date(provider.cooldownUntil).getTime() - now) / 1000)} s (até{' '}
+                      {date(provider.cooldownUntil)}).
+                    </p>
+                  )}
                   {provider.lastError && (
                     <p className="llm-provider-note">Última falha: {provider.lastError}</p>
                   )}

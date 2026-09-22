@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { THEME_SCRIPT } from '@/frontend/dashboard/theme';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -10,10 +11,18 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, title: 'AgendaMagno', statusBarStyle: 'default' },
   robots: { index: false, follow: false },
 };
-export const viewport: Viewport = { themeColor: '#2d6c59' };
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#2d6c59' },
+    { media: '(prefers-color-scheme: dark)', color: '#0f1311' },
+  ],
+};
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );
