@@ -98,6 +98,21 @@ export function db(): Promise<Database> {
     return connection;
   });
 }
+// Falhas de banco chegam à API como um erro genérico, e "verifique a configuração" não diz o
+// que conferir. O código do PostgreSQL separa os dois enganos comuns de uma primeira
+// publicação: migração não aplicada e credencial desatualizada. Só o código é usado; o texto
+// do banco pode carregar nomes de objetos e não vai para a tela.
+export function databaseHint(error: unknown): string {
+  const code = (error as { code?: unknown })?.code;
+  if (code === '42P01')
+    return 'O banco respondeu, mas as tabelas da agenda ainda não existem. Rode npm run db:migrate com a conexão administrativa antes do primeiro acesso.';
+  if (code === '28P01' || code === '28000')
+    return 'O banco recusou as credenciais da conexão. Confira DATABASE_URL: depois de trocar a senha no provedor, atualize a variável e publique de novo.';
+  if (code === '3D000') return 'O banco indicado em DATABASE_URL não existe.';
+  if (code === '42501')
+    return 'A conexão do app não tem permissão para esta operação. Confira as permissões do usuário restrito.';
+  return 'Verifique a configuração e a conexão com o banco.';
+}
 export async function lock(tx: Sql) {
   await tx.query('SELECT id FROM agenda_meta WHERE id=1 FOR UPDATE');
 }

@@ -64,7 +64,7 @@ Nenhuma dessas variáveis usa prefixo `NEXT_PUBLIC_`. As chaves dos provedores d
 
 Para usar **Preview**, configure também suas variáveis nesse ambiente. Use um banco ou branch Neon de testes e `APP_URL` com a origem exata daquele preview; não reutilize a origem de produção. Alterações de variáveis exigem novo deploy. Esta aplicação permite uma origem por ambiente, então acessar por outro domínio exige ajustar `APP_URL`.
 
-No banco local, o schema é aplicado automaticamente. Em PostgreSQL, as migrações são separadas do aplicativo. Configure `DATABASE_MODE=postgres` e `DATABASE_MIGRATION_URL` com a conexão administrativa na máquina/CI de migração, então execute:
+No banco local, o schema é aplicado automaticamente a cada início. **Em PostgreSQL não é**: o app publicado nunca cria tabelas, a menos que `DATABASE_AUTO_MIGRATE=true`, o que não é recomendado. Sem a migração, o primeiro acesso falha já no login — ele grava sessão, limite de tentativas e configuração de segurança —, com a mensagem de que as tabelas ainda não existem. Migrações são separadas do aplicativo. Configure `DATABASE_MODE=postgres` e `DATABASE_MIGRATION_URL` com a conexão administrativa na máquina/CI de migração, então execute:
 
 ```bash
 npm run db:migrate
@@ -92,7 +92,7 @@ Modelos de raciocínio costumam recusar `response_format` com `json_object`, por
 
 O tipo escolhido decide com quem a agenda fala. `Gemini` fala sempre com a API do Google e por isso não tem campo de endereço: serve só para modelos do Google. Um modelo de outro serviço com esse tipo faz a agenda pedir aquele modelo ao Google, que recusa — a tela de modelos passa a apontar essa troca. Para Groq, OpenAI, OpenRouter e semelhantes, use `Compatível com Chat Completions` e informe a URL.
 
-O campo de URL espera o endpoint inteiro, não o endereço base que a maioria das documentações divulga. Em serviços compatíveis, some `/chat/completions` ao final: o Groq, por exemplo, documenta `https://api.groq.com/openai/v1` e aqui se informa `https://api.groq.com/openai/v1/chat/completions`. Só o endereço base responde HTTP 404, e a tela de modelos mostra isso junto com o código estruturado devolvido pela API (`unknown_url`, `model_not_found`, `PERMISSION_DENIED`). O texto da mensagem do provedor nunca é exibido: ele pode repetir o que você escreveu. Se o código apontar o modelo, confirme que aquele identificador aceita resposta em JSON — nem todos os modelos de um mesmo serviço aceitam.
+O campo de URL espera o endpoint inteiro, não o endereço base que a maioria das documentações divulga. Em serviços compatíveis, some `/chat/completions` ao final: o Groq, por exemplo, documenta `https://api.groq.com/openai/v1` e aqui se informa `https://api.groq.com/openai/v1/chat/completions`. O endereço do site ou do painel do serviço também não serve: ele responde com um redirecionamento, que a agenda não segue para o destino não escapar da verificação de endereço público, ou devolve HTML em vez de JSON. Os dois casos são nomeados na tela de modelos. Só o endereço base responde HTTP 404, e a tela mostra isso junto com o código estruturado devolvido pela API (`unknown_url`, `model_not_found`, `PERMISSION_DENIED`). O texto da mensagem do provedor nunca é exibido: ele pode repetir o que você escreveu. Se o código apontar o modelo, confirme que aquele identificador aceita resposta em JSON — nem todos os modelos de um mesmo serviço aceitam.
 
 O fluxo é:
 

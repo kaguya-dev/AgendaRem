@@ -446,7 +446,9 @@ export default function LlmSettings({ onChange }: { onChange: () => Promise<void
                   spellCheck={false}
                 />
                 <p className="field-help">
-                  Informe o endpoint de Chat Completions, incluindo o caminho completo.
+                  Informe o endpoint de Chat Completions, com o caminho completo — não o endereço do
+                  site nem o do painel do serviço. No Groq, por exemplo, é
+                  https://api.groq.com/openai/v1/chat/completions.
                 </p>
               </>
             )}

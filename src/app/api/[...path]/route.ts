@@ -10,6 +10,7 @@ import {
   reauthenticate,
 } from '@/backend/access';
 import { exportBackup, importBackup } from '@/backend/backup';
+import { databaseHint } from '@/backend/db';
 import { DomainError } from '@/backend/domain';
 import { cleanup, clearChat, panelAction, snapshot, startChat } from '@/backend/service';
 import { deleteProvider, listProviders, resetProvider, saveProvider } from '@/backend/llm';
@@ -125,13 +126,7 @@ async function handler(request: Request, context: { params: Promise<{ path: stri
       );
     if (error instanceof SyntaxError) return reply({ error: 'JSON inválido.' }, 400);
     console.error('AgendaMagno API failure:', error instanceof Error ? error.name : 'UnknownError');
-    return reply(
-      {
-        error:
-          'Não foi possível concluir a operação. Verifique a configuração e a conexão com o banco.',
-      },
-      500,
-    );
+    return reply({ error: `Não foi possível concluir a operação. ${databaseHint(error)}` }, 500);
   }
 }
 export const GET = handler;

@@ -235,3 +235,36 @@ test('hash gerado pelo script substitui a senha em texto no ambiente publicado',
     process.env.PANEL_PASSWORD = password;
   }
 });
+
+test('falha de banco na API diz o que conferir em vez de um aviso genérico', async () => {
+  const real = globals.agendaDb;
+  const quebrado = (code: string): Database => ({
+    query: async () => {
+      throw Object.assign(new Error('detalhe interno do postgres'), { code });
+    },
+    transaction: async () => {
+      throw Object.assign(new Error('detalhe interno do postgres'), { code });
+    },
+    close: async () => {},
+  });
+  const mensagem = async (code: string) => {
+    globals.agendaDb = Promise.resolve(quebrado(code));
+    const resposta = await call('login', { password });
+    assert.equal(resposta.status, 500);
+    return (await resposta.json()).error as string;
+  };
+  try {
+    // Publicação sem migração: o banco responde, mas não tem as tabelas.
+    assert.match(await mensagem('42P01'), /tabelas da agenda ainda não existem.*db:migrate/s);
+    // Senha do banco trocada no provedor e não atualizada no ambiente publicado.
+    assert.match(await mensagem('28P01'), /recusou as credenciais.*DATABASE_URL/s);
+    assert.match(await mensagem('3D000'), /banco indicado em DATABASE_URL não existe/);
+    assert.match(await mensagem('42501'), /não tem permissão.*usuário restrito/s);
+    // Erro desconhecido mantém o aviso antigo, e nenhum deles repete o texto do banco.
+    const desconhecido = await mensagem('XX000');
+    assert.match(desconhecido, /Verifique a configuração e a conexão com o banco/);
+    assert.ok(!desconhecido.includes('detalhe interno'), desconhecido);
+  } finally {
+    globals.agendaDb = real;
+  }
+});

@@ -906,3 +906,43 @@ test('tipo Gemini usado para modelo de outro serviço explica a escolha errada',
   );
   assert.doesNotMatch((await listProviders(database)).providers[0].lastError!, /API do Google/);
 });
+
+test('endereço de site em vez de endpoint é nomeado, por redirecionamento ou por HTML', async () => {
+  // O painel do serviço redireciona; a agenda não segue redirecionamento, então o pedido para
+  // aqui sem nenhuma pista sobre o que está errado.
+  await saveProvider(config({ apiUrl: 'https://console.exemplo.com/' }), database);
+  await assert.rejects(
+    generateCommands('system', 'message', database, {
+      fetch: async () => new Response('', { status: 307, headers: { location: '/login' } }),
+    }),
+  );
+  const redirecionou = (await listProviders(database)).providers[0].lastError!;
+  assert.match(redirecionou, /redirecionamento, que não é seguido/);
+  assert.match(redirecionou, /api\.groq\.com\/openai\/v1\/chat\/completions/);
+  await resetProvider((await listProviders(database)).providers[0].id, database);
+
+  // Já uma página de documentação responde HTML com status comum.
+  await assert.rejects(
+    generateCommands('system', 'message', database, {
+      fetch: async () =>
+        new Response('<!doctype html><title>Docs</title>', {
+          status: 405,
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+        }),
+    }),
+  );
+  const html = (await listProviders(database)).providers[0].lastError!;
+  assert.match(html, /veio em HTML, não em JSON/);
+  assert.match(html, /página web, não o endpoint/);
+  await resetProvider((await listProviders(database)).providers[0].id, database);
+
+  // Uma API de verdade que recusa não recebe nenhum desses avisos.
+  await assert.rejects(
+    generateCommands('system', 'message', database, {
+      fetch: async () => Response.json({ error: { code: 'model_not_found' } }, { status: 404 }),
+    }),
+  );
+  const api = (await listProviders(database)).providers[0].lastError!;
+  assert.doesNotMatch(api, /HTML|redirecionamento/);
+  assert.match(api, /endpoint completo de Chat Completions/);
+});

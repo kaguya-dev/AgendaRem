@@ -192,11 +192,16 @@ async function runModel<T>(
               ? 'Chave inválida ou sem permissão. Confira a credencial e o modelo.'
               : status >= 500 || status === 408
                 ? 'API temporariamente indisponível.'
-                : status === 404
-                  ? 'A API não reconheceu o endereço. Informe o endpoint completo de Chat Completions, com o caminho inteiro (…/v1/chat/completions), e não só o endereço base.'
-                  : status === 400
-                    ? 'A API recusou o pedido. Confira o identificador do modelo e se ele aceita resposta em JSON.'
-                    : 'A API recusou a configuração. Confira modelo e URL.';
+                : // Endereço de site e de painel redireciona; endpoint de API responde direto.
+                  // A agenda não segue redirecionamento, para o destino não escapar da
+                  // verificação de endereço público feita antes da conexão.
+                  status >= 300 && status < 400
+                  ? 'O endereço respondeu com um redirecionamento, que não é seguido por segurança. Isso costuma ser o endereço do site ou do painel do serviço no lugar do endpoint da API. No Groq, por exemplo, o endpoint é https://api.groq.com/openai/v1/chat/completions.'
+                  : status === 404
+                    ? 'A API não reconheceu o endereço. Informe o endpoint completo de Chat Completions, com o caminho inteiro (…/v1/chat/completions), e não só o endereço base.'
+                    : status === 400
+                      ? 'A API recusou o pedido. Confira o identificador do modelo e se ele aceita resposta em JSON.'
+                      : 'A API recusou a configuração. Confira modelo e URL.';
       const fallback =
         status === 401 || status === 403 || status === 402
           ? 86400000
@@ -222,9 +227,17 @@ async function runModel<T>(
         provider.config.kind === 'gemini' && (status === 400 || status === 404)
           ? ' Este tipo fala apenas com a API do Google. Se o modelo é de outro serviço, edite a IA, escolha “Compatível com Chat Completions” e informe a URL do endpoint desse serviço.'
           : '';
+      // Página web responde HTML; API de verdade responde JSON. Dizer isso evita a caça ao
+      // erro quando o endereço aponta para a documentação ou para a página de login.
+      const notAnApi =
+        status < 300 || status >= 400
+          ? /html/i.test(response.headers.get('content-type') ?? '')
+            ? ' A resposta veio em HTML, não em JSON: esse endereço é uma página web, não o endpoint de uma API.'
+            : ''
+          : '';
       const detail = `${message}${code ? ` A API respondeu com o código ${code}.` : ''}${
         field ? ` Campo recusado: ${field}.` : ''
-      }${wrongKind}`;
+      }${notAnApi}${wrongKind}`;
       // Recusa de formato: a mesma API ganha uma tentativa sem `response_format`, e por isso
       // esta primeira não pausa o provedor nem entra na lista de falhas — ela ainda pode dar
       // certo daqui a um instante.
