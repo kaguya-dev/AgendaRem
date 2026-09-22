@@ -423,6 +423,14 @@ export default function LlmSettings({ onChange }: { onChange: () => Promise<void
               autoCapitalize="none"
               spellCheck={false}
             />
+            {form.kind === 'gemini' && (
+              <p className="field-help">
+                O tipo Gemini fala sempre com a API do Google, em generativelanguage.googleapis.com,
+                e por isso não tem campo de endereço. Use-o só para modelos do Google. Para Groq,
+                OpenAI, OpenRouter e semelhantes, escolha “Compatível com Chat Completions” e
+                informe a URL do serviço.
+              </p>
+            )}
             {form.kind === 'compatible' && (
               <>
                 <label htmlFor="llm-url">Endereço completo da API (HTTPS)</label>

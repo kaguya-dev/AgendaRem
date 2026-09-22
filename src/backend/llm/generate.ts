@@ -215,9 +215,16 @@ async function runModel<T>(
       const code =
         short(body?.error?.code) ?? short(body?.error?.type) ?? short(body?.error?.status);
       const field = short(body?.error?.param);
+      // O tipo "Gemini" não tem campo de URL na tela: ele sempre fala com a API do Google.
+      // Escolhê-lo para um modelo de outro serviço leva a agenda a pedir esse modelo ao
+      // Google, que recusa sem dizer o motivo real. A recusa passa a apontar a escolha errada.
+      const wrongKind =
+        provider.config.kind === 'gemini' && (status === 400 || status === 404)
+          ? ' Este tipo fala apenas com a API do Google. Se o modelo é de outro serviço, edite a IA, escolha “Compatível com Chat Completions” e informe a URL do endpoint desse serviço.'
+          : '';
       const detail = `${message}${code ? ` A API respondeu com o código ${code}.` : ''}${
         field ? ` Campo recusado: ${field}.` : ''
-      }`;
+      }${wrongKind}`;
       // Recusa de formato: a mesma API ganha uma tentativa sem `response_format`, e por isso
       // esta primeira não pausa o provedor nem entra na lista de falhas — ela ainda pode dar
       // certo daqui a um instante.

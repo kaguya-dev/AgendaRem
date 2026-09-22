@@ -879,3 +879,30 @@ test('Gemini 2.5 Flash responde sem raciocínio, que consumia a saída e a esper
   assert.equal(pro.generationConfig.thinkingConfig, undefined);
   assert.equal(pro.generationConfig.maxOutputTokens, 2048);
 });
+
+test('tipo Gemini usado para modelo de outro serviço explica a escolha errada', async () => {
+  await saveProvider(config({ kind: 'gemini', model: 'gpt-oss-120b', apiUrl: '' }), database);
+  await assert.rejects(
+    generateCommands('system', 'message', database, {
+      fetch: async () =>
+        Response.json(
+          { error: { message: 'texto do Google', status: 'INVALID_ARGUMENT' } },
+          { status: 400 },
+        ),
+    }),
+  );
+  const erro = (await listProviders(database)).providers[0].lastError!;
+  assert.match(erro, /código INVALID_ARGUMENT/);
+  assert.match(erro, /apenas com a API do Google/);
+  assert.match(erro, /Compatível com Chat Completions/);
+  assert.ok(!erro.includes('texto do Google'), erro);
+  // Já uma API compatível recusada não recebe esse aviso: o tipo dela está certo.
+  await saveProvider(config({ name: 'Compatível', priority: 2, apiKey: 'outra' }), database);
+  await deleteProvider((await listProviders(database)).providers[0].id, database);
+  await assert.rejects(
+    generateCommands('system', 'message', database, {
+      fetch: async () => Response.json({ error: { code: 'model_not_found' } }, { status: 404 }),
+    }),
+  );
+  assert.doesNotMatch((await listProviders(database)).providers[0].lastError!, /API do Google/);
+});
