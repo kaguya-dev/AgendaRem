@@ -782,3 +782,100 @@ test('erro da API aponta a causa pelo código estruturado, sem repetir o texto d
     await deleteProvider(provider.id, database);
   }
 });
+
+test('modelo que recusa json_object ganha segunda tentativa sem o campo, na mesma API', async () => {
+  await saveProvider(config(), database);
+  const enviados: Record<string, unknown>[] = [];
+  const result = await generateCommands('system', 'message', database, {
+    fetch: async (_url, init) => {
+      const body = JSON.parse(String(init.body));
+      enviados.push(body);
+      // Modelos de raciocínio recusam o formato, e a recusa vem como HTTP 400.
+      return body.response_format
+        ? Response.json(
+            {
+              error: {
+                message: 'json_object is not supported with this model',
+                type: 'invalid_request_error',
+                param: 'response_format',
+              },
+            },
+            { status: 400 },
+          )
+        : success(31);
+    },
+  });
+  assert.deepEqual(result, [{ op: 'create_task', title: 'Estudar' }]);
+  assert.equal(enviados.length, 2);
+  assert.equal((enviados[0].response_format as { type: string }).type, 'json_object');
+  assert.equal(enviados[1].response_format, undefined);
+  // A primeira recusa não pausa o provedor: ele acabou de responder certo na segunda.
+  const status = (await listProviders(database)).providers[0];
+  assert.equal(status.lastError, null);
+  assert.equal(status.cooldownUntil, null);
+  // As duas chamadas são cobradas, porque as duas saíram de fato.
+  assert.equal(status.requestsToday, 2);
+});
+
+test('recusa persistente registra o campo apontado pela API, sem o texto dela', async () => {
+  await saveProvider(config(), database);
+  await assert.rejects(
+    generateCommands('system', 'message', database, {
+      fetch: async () =>
+        Response.json(
+          { error: { message: 'texto da pessoa aqui', code: 'decommissioned', param: 'model' } },
+          { status: 400 },
+        ),
+    }),
+  );
+  const erro = (await listProviders(database)).providers[0].lastError!;
+  assert.match(erro, /código decommissioned/);
+  assert.match(erro, /Campo recusado: model/);
+  assert.ok(!erro.includes('texto da pessoa'), erro);
+});
+
+test('Gemini 2.5 Flash responde sem raciocínio, que consumia a saída e a espera', async () => {
+  await saveProvider(config({ kind: 'gemini', model: 'gemini-2.5-flash', apiUrl: '' }), database);
+  await saveProvider(
+    config({
+      name: 'Pro',
+      kind: 'gemini',
+      model: 'gemini-2.5-pro',
+      apiUrl: '',
+      priority: 2,
+      apiKey: 'pro-key',
+      enabled: false,
+    }),
+    database,
+  );
+  const corpo = async (fetchBody: (b: any) => void) => {
+    await generateCommands('system', 'message', database, {
+      fetch: async (_url, init) => {
+        fetchBody(JSON.parse(String(init.body)));
+        return Response.json({
+          candidates: [{ content: { parts: [{ text: '{"commands":[{"op":"help"}]}' }] } }],
+          usageMetadata: { totalTokenCount: 12 },
+        });
+      },
+    });
+  };
+  let flash: any;
+  await corpo((b) => (flash = b));
+  assert.equal(flash.generationConfig.thinkingConfig.thinkingBudget, 0);
+  // O 2.5 Pro não aceita desligar o raciocínio; mandar o campo para ele seria outra recusa.
+  const providers = (await listProviders(database)).providers;
+  await saveProvider(
+    {
+      ...config({ apiUrl: '' }),
+      id: providers[0].id,
+      kind: 'gemini',
+      model: 'gemini-2.5-pro',
+      apiKey: undefined,
+    },
+    database,
+  );
+  let pro: any;
+  await corpo((b) => (pro = b));
+  assert.equal(pro.generationConfig.thinkingConfig, undefined);
+  assert.equal(pro.generationConfig.maxOutputTokens, 2048);
+});

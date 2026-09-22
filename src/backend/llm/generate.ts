@@ -73,10 +73,25 @@ async function runModel<T>(
     await database.query<{
       id: string;
       name: string;
-    }>(`SELECT id,config->>'name' AS name FROM agenda_llm_providers WHERE (config->>'enabled')::boolean
+      kind: string;
+    }>(`SELECT id,config->>'name' AS name,config->>'kind' AS kind FROM agenda_llm_providers WHERE (config->>'enabled')::boolean
     ORDER BY (config->>'priority')::integer,created_at,id`)
   ).rows;
   if (!candidates.length) return null;
+  // Modelos de raciocínio costumam recusar `response_format: json_object` — o texto sai do
+  // passo de raciocínio e a API não garante o formato. Recusar o pedido por isso deixaria a
+  // pessoa sem saída, então cada provedor compatível ganha uma segunda tentativa sem esse
+  // campo; o prompt já exige JSON e o leitor já aceita texto em volta do objeto. A segunda
+  // tentativa só entra em cena se a primeira for recusada com HTTP 400.
+  const plan = candidates.flatMap((candidate) =>
+    task.json && candidate.kind === 'compatible'
+      ? [
+          { ...candidate, json: true, onlyAfterJsonRejection: false },
+          { ...candidate, json: false, onlyAfterJsonRejection: true },
+        ]
+      : [{ ...candidate, json: task.json, onlyAfterJsonRejection: false }],
+  );
+  const jsonRejected = new Set<string>();
   // Check encryption once, so an invalid server secret isn't mistaken for quota exhaustion.
   encryptionKey();
   const estimate = estimateTokens(system + text) + task.maxOutputTokens;
@@ -84,7 +99,8 @@ async function runModel<T>(
   let attempts = 0;
   const failures: string[] = [];
   let stoppedEarly = false;
-  for (const candidate of candidates) {
+  for (const candidate of plan) {
+    if (candidate.onlyAfterJsonRejection && !jsonRejected.has(candidate.id)) continue;
     if (attempts >= MAX_ATTEMPTS || Date.now() >= deadline) {
       stoppedEarly = true;
       break;
@@ -113,15 +129,22 @@ async function runModel<T>(
               contents: [{ role: 'user', parts: [{ text }] }],
               generationConfig: {
                 temperature: 0,
-                ...(task.json ? { responseMimeType: 'application/json' } : {}),
+                ...(candidate.json ? { responseMimeType: 'application/json' } : {}),
                 maxOutputTokens: task.maxOutputTokens,
+                // O raciocínio do 2.5 Flash consome o mesmo orçamento de saída e o tempo da
+                // requisição: com ele ligado, o pedido estourava a espera ou voltava sem texto,
+                // porque os tokens todos viravam pensamento. Interpretar comandos com um prompt
+                // já estruturado não depende dele. Só estes modelos aceitam desligar.
+                ...(/2\.5-flash/.test(config.model)
+                  ? { thinkingConfig: { thinkingBudget: 0 } }
+                  : {}),
               },
             }
           : {
               model: config.model,
               temperature: 0,
               max_tokens: task.maxOutputTokens,
-              ...(task.json ? { response_format: { type: 'json_object' } } : {}),
+              ...(candidate.json ? { response_format: { type: 'json_object' } } : {}),
               messages: [
                 { role: 'system', content: system },
                 { role: 'user', content: text },
@@ -184,11 +207,24 @@ async function runModel<T>(
       // O corpo é lido uma vez só: dele saem o código estruturado do erro e, no Gemini, o
       // RetryInfo. Nunca o texto do provedor, que pode repetir a mensagem da pessoa.
       const body = await response.json().catch(() => null);
-      const raw = body?.error?.code ?? body?.error?.type ?? body?.error?.status;
-      // Só um identificador curto e sem espaços atravessa — "unknown_url", "model_not_found",
-      // "INVALID_ARGUMENT". Uma frase não passa neste filtro.
-      const code = typeof raw === 'string' && /^[A-Za-z0-9_.-]{1,60}$/.test(raw) ? raw : null;
-      const detail = code ? `${message} A API respondeu com o código ${code}.` : message;
+      // Só identificadores curtos e sem espaços atravessam — "unknown_url", "model_not_found",
+      // "INVALID_ARGUMENT", e o nome do campo recusado em `param`. Uma frase não passa neste
+      // filtro, e é por isso que o texto do provedor nunca chega à tela.
+      const short = (value: unknown) =>
+        typeof value === 'string' && /^[A-Za-z0-9_.\[\]-]{1,60}$/.test(value) ? value : null;
+      const code =
+        short(body?.error?.code) ?? short(body?.error?.type) ?? short(body?.error?.status);
+      const field = short(body?.error?.param);
+      const detail = `${message}${code ? ` A API respondeu com o código ${code}.` : ''}${
+        field ? ` Campo recusado: ${field}.` : ''
+      }`;
+      // Recusa de formato: a mesma API ganha uma tentativa sem `response_format`, e por isso
+      // esta primeira não pausa o provedor nem entra na lista de falhas — ela ainda pode dar
+      // certo daqui a um instante.
+      if (status === 400 && candidate.json && candidate.kind === 'compatible') {
+        jsonRejected.add(candidate.id);
+        continue;
+      }
       let retryAfter = response.headers.get('retry-after');
       // Gemini can return RetryInfo in the JSON body instead of an HTTP header.
       // Read only the structured duration; never expose the upstream error text.

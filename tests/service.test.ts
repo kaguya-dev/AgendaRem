@@ -1,7 +1,7 @@
 import { before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createDatabase, db, loadState, type Database } from '../src/backend/db';
-import { chat, cleanup, panelAction, snapshot } from '../src/backend/service';
+import { chat, cleanup, panelAction, snapshot, startChat } from '../src/backend/service';
 import { cronAuth, sameOrigin, cookie } from '../src/backend/auth';
 import type { Command } from '../src/backend/domain';
 
@@ -229,4 +229,40 @@ test('reescrita da resposta é acabamento: nunca inventa, nunca derruba o que j�
   assert.equal(asked, false);
   assert.equal((await snapshot(database)).settings.naturalReply, false);
   await panelAction([{ op: 'set_natural_reply', enabled: true }], 'natural-on', database);
+});
+
+test('mensagem é aceita e gravada antes de executar, e o trabalho não depende da aba aberta', async () => {
+  const started = await startChat(
+    'Anota: Fecha a aba',
+    'async-1',
+    database,
+    async (): Promise<Command[]> => [{ op: 'create_task', title: 'Fecha a aba' }],
+  );
+  // A resposta sai imediatamente, sem esperar interpretação nem execução.
+  assert.equal(started.accepted.status, 'processing');
+  assert.equal(started.accepted.reply, null);
+  assert.ok(started.run);
+  const durante = (await snapshot(database)).messages as { id: string; body: string | null }[];
+  assert.equal(durante.find((m) => m.id === started.accepted.id)!.body, 'Anota: Fecha a aba');
+  assert.equal(
+    (await loadState(database)).tasks.some((t) => t.title === 'Fecha a aba'),
+    false,
+  );
+  // Reenviar o mesmo pedido enquanto ele corre devolve o andamento, sem executar de novo.
+  const repetido = await startChat('Anota: Fecha a aba', 'async-1', database);
+  assert.equal(repetido.run, null);
+  assert.equal(repetido.accepted.status, 'processing');
+  // O trabalho roda depois da resposta — na rota, dentro de `after`.
+  const concluido = await started.run!();
+  assert.equal(concluido.status, 'done');
+  assert.match(concluido.reply!, /Fecha a aba adicionada/);
+  assert.equal(
+    (await loadState(database)).tasks.filter((t) => t.title === 'Fecha a aba').length,
+    1,
+  );
+  // Terminado, o mesmo requestId devolve o resultado pronto em vez de repetir a ação.
+  const depois = await startChat('Anota: Fecha a aba', 'async-1', database);
+  assert.equal(depois.run, null);
+  assert.equal(depois.accepted.status, 'done');
+  assert.equal(depois.accepted.reply, concluido.reply);
 });

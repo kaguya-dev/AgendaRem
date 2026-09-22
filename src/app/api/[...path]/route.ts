@@ -1,3 +1,4 @@
+import { after } from 'next/server';
 import { z } from 'zod';
 import { cookie, cronAuth, sameOrigin } from '@/backend/auth';
 import {
@@ -10,7 +11,7 @@ import {
 } from '@/backend/access';
 import { exportBackup, importBackup } from '@/backend/backup';
 import { DomainError } from '@/backend/domain';
-import { chat, cleanup, clearChat, panelAction, snapshot } from '@/backend/service';
+import { cleanup, clearChat, panelAction, snapshot, startChat } from '@/backend/service';
 import { deleteProvider, listProviders, resetProvider, saveProvider } from '@/backend/llm';
 
 export const runtime = 'nodejs';
@@ -98,7 +99,12 @@ async function handler(request: Request, context: { params: Promise<{ path: stri
       const value = z
         .object({ text: z.string().trim().min(1).max(6000), requestId: z.string().uuid() })
         .parse(body);
-      return reply(await chat(value.text, value.requestId));
+      const started = await startChat(value.text, value.requestId);
+      // A resposta sai assim que a mensagem está gravada e reservada. A interpretação e a
+      // execução continuam depois dela, para que fechar a aba ou perder a conexão não
+      // interrompa o pedido — quem ficar na tela vê o resultado pela listagem de mensagens.
+      if (started.run) after(started.run);
+      return reply(started.accepted);
     }
     if (path === 'chat/clear') return reply(await clearChat());
     if (path === 'llm-providers') return reply(await saveProvider(body));

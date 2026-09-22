@@ -24,9 +24,18 @@ export function Assistant({ data, refresh }: { data: Data | null; refresh: () =>
   const end = useRef<HTMLDivElement>(null);
   const pendingRequest = useRef<{ text: string; id: string } | null>(null);
   const messages = [...(data?.messages.filter((m) => m.channel === 'web') ?? [])].reverse();
+  // O servidor aceita a mensagem e segue trabalhando depois de responder, para que fechar a
+  // aba não interrompa o pedido. Enquanto houver um em andamento, a tela consulta com mais
+  // frequência que a atualização normal de 15 segundos.
+  const processing = messages.some((m) => m.status === 'processing');
+  useEffect(() => {
+    if (!processing) return;
+    const timer = setInterval(() => void refresh(), 2000);
+    return () => clearInterval(timer);
+  }, [processing, refresh]);
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, busy]);
+  }, [messages.length, busy, processing]);
   async function send(e: FormEvent) {
     e.preventDefault();
     if (!text.trim() || busy) return;
@@ -40,13 +49,8 @@ export function Assistant({ data, refresh }: { data: Data | null; refresh: () =>
         text,
         requestId: pendingRequest.current.id,
       });
-      if (r.status === 'processing') {
-        setError(
-          'Este pedido ainda está sendo processado. Aguarde um pouco e envie novamente para consultar a resposta, sem repetir a ação.',
-        );
-        await refresh();
-        return;
-      }
+      // 'processing' é a resposta normal: a mensagem foi gravada e o trabalho continua no
+      // servidor. Reenviar o mesmo requestId devolve o resultado, sem repetir a ação.
       pendingRequest.current = null;
       setText('');
       if (r.error) setError(r.error);
@@ -119,10 +123,10 @@ export function Assistant({ data, refresh }: { data: Data | null; refresh: () =>
             )}
           </div>
         ))}
-        {busy && (
+        {(busy || processing) && (
           <div className="chat-typing">
             <LoaderCircle size={14} className="spin" />
-            Organizando seu pedido…
+            Organizando seu pedido… você pode fechar a página; eu termino mesmo assim.
           </div>
         )}
         <div ref={end} />
@@ -138,20 +142,23 @@ export function Assistant({ data, refresh }: { data: Data | null; refresh: () =>
           autoFocus
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Ex.: Finalizei #1"
+          placeholder={processing ? 'Terminando o pedido anterior…' : 'Ex.: Finalizei #1'}
           maxLength={6000}
-          disabled={busy}
+          disabled={busy || processing}
         />
         <button
           className="button primary"
           aria-label="Enviar mensagem"
-          disabled={busy || !text.trim()}
+          disabled={busy || processing || !text.trim()}
         >
           <Send size={18} />
         </button>
       </form>
       <div className="chat-footer">
-        <span>A IA interpreta o pedido. A agenda valida e executa as ações.</span>
+        <span>
+          A IA interpreta o pedido. A agenda valida e executa as ações. O pedido continua no
+          servidor se você sair da página.
+        </span>
         {messages.length > 0 &&
           (confirming ? (
             <span className="chat-clear-confirm">

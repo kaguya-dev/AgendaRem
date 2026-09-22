@@ -76,6 +76,8 @@ No menu **Modelos de IA**, clique em **Adicionar modelo** e cadastre um ou mais 
 
 Você pode adicionar até 20 modelos, do mesmo serviço ou de serviços diferentes. O cadastro fica salvo no banco, sem alteração de código ou novo deploy. A interface mostra uso do dia, falhas e pausa temporária de cada provedor. A API compatível precisa aceitar autenticação Bearer e os campos `model`, `messages`, `max_tokens`, `temperature` e `response_format` com `json_object`.
 
+Modelos de raciocínio costumam recusar `response_format` com `json_object`, porque o texto sai do passo de raciocínio e a API não garante o formato. Quando uma API compatível recusa o pedido com HTTP 400, a mesma API é chamada outra vez sem esse campo, já que o prompt exige JSON e o leitor aceita texto em volta do objeto. As duas chamadas contam no uso do dia; se a segunda funcionar, o provedor não é pausado. Nos modelos Gemini 2.5 Flash o raciocínio é desligado no pedido: ele consumia o mesmo orçamento de saída e o tempo de espera, e a resposta voltava vazia ou estourava o tempo.
+
 O campo de URL espera o endpoint inteiro, não o endereço base que a maioria das documentações divulga. Em serviços compatíveis, some `/chat/completions` ao final: o Groq, por exemplo, documenta `https://api.groq.com/openai/v1` e aqui se informa `https://api.groq.com/openai/v1/chat/completions`. Só o endereço base responde HTTP 404, e a tela de modelos mostra isso junto com o código estruturado devolvido pela API (`unknown_url`, `model_not_found`, `PERMISSION_DENIED`). O texto da mensagem do provedor nunca é exibido: ele pode repetir o que você escreveu. Se o código apontar o modelo, confirme que aquele identificador aceita resposta em JSON — nem todos os modelos de um mesmo serviço aceitam.
 
 O fluxo é:
@@ -252,6 +254,8 @@ A conexão de execução deve ter somente `SELECT`, `INSERT`, `UPDATE` e `DELETE
 As consultas usam parâmetros para valores e uma lista fixa de tabelas para identificadores. Os testes permanentes incluem SQL injection pelo login e campos de tarefas, rejeição de comandos arbitrários, origem inválida, cookies adulterados, revogação, TOTP e uma conexão com papel restrito que não pode criar/apagar tabelas. Isso valida esses cenários, sem substituir revisão contínua de segurança.
 
 ## Como o assistente responde
+
+A mensagem é aceita em duas etapas. A primeira grava o texto e reserva o pedido, e é ela que responde à requisição — em menos de um segundo, antes de qualquer chamada à IA. A segunda interpreta e executa, depois da resposta. Você pode fechar a aba, trocar de tela ou perder a conexão: o pedido termina no servidor, e a resposta aparece na conversa quando você voltar. Enquanto um pedido está em andamento, a tela consulta a cada 2 segundos e o campo de escrita fica travado, porque as mensagens são processadas uma de cada vez. Se o servidor for interrompido no meio, a reserva vence em 150 segundos e a mensagem é marcada como interrompida, para reenvio.
 
 Mensagem → contexto limitado + LLM → comandos JSON → validação e execução pelo servidor → resposta montada a partir do que aconteceu → segunda chamada opcional que reescreve essa resposta → texto na tela. O provedor não recebe credenciais de banco e não executa SQL: ele devolve comandos, e quem consulta e altera os dados é o servidor, depois de validar cada campo. Falhas de provedor podem causar tentativas em outras APIs conforme a ordem configurada. Respostas de esclarecimento e “mostrar mais” podem ser resolvidas diretamente quando já existe uma pergunta/lista pendente.
 

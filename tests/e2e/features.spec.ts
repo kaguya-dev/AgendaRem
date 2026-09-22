@@ -334,3 +334,34 @@ test('barra lateral recolhe, devolve a largura ao conteúdo e a escolha sobreviv
   await expect.poll(() => borda('.sidebar')).toBeGreaterThan(0);
   await expect(page.getByRole('button', { name: /^Todas as tarefas/ })).toBeVisible();
 });
+test('pedido é aceito na hora e concluído pelo servidor, sem depender da página aberta', async ({
+  page,
+}) => {
+  await enter(page);
+  const resposta = await page.request.post('/api/chat', {
+    headers: { origin: 'http://localhost:3100' },
+    data: { text: 'Anota: Sobrevive à saída', requestId: randomUUID() },
+  });
+  // O servidor responde antes de interpretar e executar: nada fica preso na requisição.
+  const corpo = await resposta.json();
+  expect(corpo.status).toBe('processing');
+  expect(corpo.reply).toBeNull();
+  // E termina o trabalho sozinho, com a página em outro lugar.
+  await page.goto('about:blank');
+  await expect
+    .poll(
+      async () => {
+        const state = await page.request.get('http://localhost:3100/api/state');
+        return ((await state.json()).tasks as { title: string }[]).some(
+          (t) => t.title === 'Sobrevive à saída',
+        );
+      },
+      { timeout: 20000 },
+    )
+    .toBe(true);
+  // De volta à conversa, a resposta já está lá, sem reenviar nada.
+  await page.goto('/');
+  await expect(page.locator('.bubble.assistant').last()).toContainText(
+    'Sobrevive à saída adicionada',
+  );
+});

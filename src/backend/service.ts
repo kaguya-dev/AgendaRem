@@ -123,9 +123,11 @@ async function polish(
     return reply;
   }
 }
-// The HTTP request owns its work: no worker, webhook or long-running server is required.
+// A mensagem é aceita em duas etapas. A primeira grava o texto e reserva o pedido; a segunda
+// interpreta e executa. Quem chama decide se espera a segunda ou deixa correr depois de
+// responder — a rota HTTP usa `after`, para que fechar a aba não interrompa o trabalho.
 // The result and mutations commit together, so repeating a request never repeats its actions.
-export async function chat(
+export async function startChat(
   text: string,
   requestId: string,
   database?: Database,
@@ -174,72 +176,92 @@ export async function chat(
     );
     return { message, state };
   });
-  if (claimed.prior) return response(claimed.prior);
+  if (claimed.prior) return { accepted: response(claimed.prior), run: null };
   const { message, state } = claimed;
-  // Depois que esta transação confirma, o pedido está feito. O que vem a seguir é redação, e
-  // fica fora do try justamente para que nada ali possa devolver "falhou" para um trabalho que
-  // já foi gravado.
-  let committed: { id: string; status: string; reply: string; natural: boolean };
-  try {
-    const commands = await interpreter(
-      state,
-      text,
-      'web',
-      new Date(message.created_at),
-      connection,
-    );
-    committed = await connection.transaction(async (tx) => {
-      await lock(tx);
-      const active = await tx.query(
-        "SELECT id FROM agenda_messages WHERE id=$1 AND status='processing' AND lease_token=$2 AND lease_until>=now()",
-        [message.id, token],
+  async function finish() {
+    // Depois que esta transação confirma, o pedido está feito. O que vem a seguir é redação, e
+    // fica fora do try justamente para que nada ali possa devolver "falhou" para um trabalho que
+    // já foi gravado.
+    let committed: { id: string; status: string; reply: string; natural: boolean };
+    try {
+      const commands = await interpreter(
+        state,
+        text,
+        'web',
+        new Date(message.created_at),
+        connection,
       );
-      if (!active.rows.length) throw new DomainError(interrupted, 409);
-      const { state: before } = await currentState(tx);
-      if (before.settings.revision !== state.settings.revision)
-        throw new DomainError(
-          'Os dados mudaram durante a interpretação. Nenhuma ação deste pedido foi aplicada; reenvie a mensagem.',
-          409,
+      committed = await connection.transaction(async (tx) => {
+        await lock(tx);
+        const active = await tx.query(
+          "SELECT id FROM agenda_messages WHERE id=$1 AND status='processing' AND lease_token=$2 AND lease_until>=now()",
+          [message.id, token],
         );
-      const result = execute(before, commands, 'web');
-      await saveState(tx, before, result.state);
-      const status = result.clarification ? 'clarification' : 'done';
-      await tx.query(
-        'UPDATE agenda_messages SET status=$2,reply=$3,error=NULL,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1',
-        [message.id, status, result.reply],
-      );
-      return {
-        id: message.id,
-        status,
-        reply: result.reply,
-        natural: result.state.settings.naturalReply !== false,
-      };
-    });
-  } catch (error) {
-    const safe =
-      error instanceof DomainError
-        ? error.message
-        : 'Não foi possível processar o pedido. Nenhuma alteração foi confirmada.';
-    await connection.query(
-      `UPDATE agenda_messages SET status='failed',error=$3,lease_token=NULL,lease_until=NULL,updated_at=now()
+        if (!active.rows.length) throw new DomainError(interrupted, 409);
+        const { state: before } = await currentState(tx);
+        if (before.settings.revision !== state.settings.revision)
+          throw new DomainError(
+            'Os dados mudaram durante a interpretação. Nenhuma ação deste pedido foi aplicada; reenvie a mensagem.',
+            409,
+          );
+        const result = execute(before, commands, 'web');
+        await saveState(tx, before, result.state);
+        const status = result.clarification ? 'clarification' : 'done';
+        await tx.query(
+          'UPDATE agenda_messages SET status=$2,reply=$3,error=NULL,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1',
+          [message.id, status, result.reply],
+        );
+        return {
+          id: message.id,
+          status,
+          reply: result.reply,
+          natural: result.state.settings.naturalReply !== false,
+        };
+      });
+    } catch (error) {
+      const safe =
+        error instanceof DomainError
+          ? error.message
+          : 'Não foi possível processar o pedido. Nenhuma alteração foi confirmada.';
+      await connection.query(
+        `UPDATE agenda_messages SET status='failed',error=$3,lease_token=NULL,lease_until=NULL,updated_at=now()
        WHERE id=$1 AND status='processing' AND lease_token=$2`,
-      [message.id, token, safe],
-    );
-    return { id: message.id, status: 'failed', reply: null, error: safe };
+        [message.id, token, safe],
+      );
+      return { id: message.id, status: 'failed', reply: null, error: safe };
+    }
+    // Fora da transação de propósito: é uma chamada de rede, e prender a linha da agenda durante
+    // ela bloquearia qualquer outra escrita pelo tempo da resposta do provedor.
+    const reply = await polish(committed.reply, text, committed.natural, connection, rewrite);
+    if (reply !== committed.reply)
+      await connection
+        .query('UPDATE agenda_messages SET reply=$2,updated_at=now() WHERE id=$1', [
+          committed.id,
+          reply,
+        ])
+        // A resposta já foi entregue; o histórico guardar a versão original é uma diferença de
+        // redação, não de conteúdo.
+        .catch(() => {});
+    return { id: committed.id, status: committed.status, reply, error: null };
   }
-  // Fora da transação de propósito: é uma chamada de rede, e prender a linha da agenda durante
-  // ela bloquearia qualquer outra escrita pelo tempo da resposta do provedor.
-  const reply = await polish(committed.reply, text, committed.natural, connection, rewrite);
-  if (reply !== committed.reply)
-    await connection
-      .query('UPDATE agenda_messages SET reply=$2,updated_at=now() WHERE id=$1', [
-        committed.id,
-        reply,
-      ])
-      // A resposta já foi entregue; o histórico guardar a versão original é uma diferença de
-      // redação, não de conteúdo.
-      .catch(() => {});
-  return { id: committed.id, status: committed.status, reply, error: null };
+  return {
+    // Já gravada e reservada: a resposta pode sair agora, e o resultado é consultado depois
+    // pela listagem de mensagens.
+    accepted: { id: message.id, status: 'processing', reply: null, error: null },
+    run: finish,
+  };
+}
+// Caminho síncrono: aceita a mensagem e espera o resultado. Usado pelos testes e por quem
+// precisa da resposta na mesma chamada.
+export async function chat(
+  text: string,
+  requestId: string,
+  database?: Database,
+  interpreter = interpret,
+  rewrite = generateReply,
+) {
+  const started = await startChat(text, requestId, database, interpreter, rewrite);
+  return started.run ? await started.run() : started.accepted;
 }
 export async function clearChat(database?: Database) {
   const connection = database ?? (await db());
