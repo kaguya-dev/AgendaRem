@@ -2,8 +2,8 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'AgendaMagno',
-    short_name: 'AgendaMagno',
+    name: 'AgendaMagna',
+    short_name: 'AgendaMagna',
     description: 'Suas tarefas e seu assistente, no notebook e no celular.',
     lang: 'pt-BR',
     start_url: '/',

@@ -141,7 +141,7 @@ export function Login({ onLogin }: { onLogin: () => void }) {
               )}
             </button>
           </form>
-          <small>Acesso exclusivo ao seu AgendaMagno.</small>
+          <small>Acesso exclusivo ao seu AgendaMagna.</small>
         </div>
       </main>
     </div>

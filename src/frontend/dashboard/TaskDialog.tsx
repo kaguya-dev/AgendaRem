@@ -102,12 +102,16 @@ export function TaskDialog({
           </label>
           <textarea
             id="task-description"
+            aria-describedby="description-help"
             placeholder="Anotações, contexto ou um link importante…"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             maxLength={5000}
             rows={4}
           />
+          <small id="description-help">
+            Guarde contexto, links e anotações. Até 5.000 caracteres.
+          </small>
           <div className="form-grid">
             <div>
               <label htmlFor="task-group">Grupo</label>

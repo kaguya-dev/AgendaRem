@@ -1369,7 +1369,7 @@ label {
   font-size: 14px;
 }
 .tasks-card {
-  background: var(--surface);
+  background: var(--bg-1);
   border: 1px solid var(--border-13);
   border-radius: var(--radius);
   box-shadow: 0 3px 8px var(--shadow-7);
@@ -2757,7 +2757,9 @@ label {
     font-size: 7px;
   }
   .description-preview {
-    display: none;
+    display: block;
+    max-width: 100%;
+    font-size: 11px;
   }
   .task-due {
     font-size: 9px;
@@ -3553,7 +3555,7 @@ label {
   padding-bottom: 0;
 }
 .assistant-view {
-  background: var(--surface);
+  background: var(--bg-1);
   border: 1px solid var(--border-13);
   border-radius: var(--radius);
   box-shadow: 0 3px 8px var(--shadow-7);
@@ -3589,5 +3591,280 @@ label {
   .assistant-view .chat-messages {
     height: 58dvh;
     flex: none;
+  }
+}
+
+.queue-status,
+.dictation-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  font-size: 12px;
+}
+.queue-status {
+  justify-content: flex-end;
+}
+.message-status {
+  display: block;
+  text-align: right;
+  font-size: 11px;
+  opacity: 0.7;
+}
+.dictation-controls small {
+  flex: 1;
+  min-width: 180px;
+}
+.dictation-controls [role='status'] {
+  width: 100%;
+}
+.finance-view {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.finance-filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.finance-filters label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  flex: 1;
+  min-width: 135px;
+}
+.finance-filters input,
+.finance-filters select {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border-5);
+  border-radius: 8px;
+  color: inherit;
+  background: var(--bg-1);
+}
+.finance-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.finance-cards article,
+.finance-panel {
+  border: 1px solid var(--border-5);
+  border-radius: 14px;
+  padding: 20px;
+  background: var(--bg-1);
+  min-width: 0;
+}
+.finance-cards article {
+  display: grid;
+  gap: 10px;
+}
+.finance-cards strong {
+  font-size: clamp(18px, 2vw, 28px);
+  overflow-wrap: anywhere;
+}
+.finance-cards small,
+.finance-comparison {
+  font-size: 12px;
+}
+.finance-charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.finance-panel h2 {
+  font-size: 17px;
+  margin-bottom: 16px;
+}
+.category-group + .category-group {
+  margin-top: 22px;
+}
+.category-group h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.category-bar {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  padding: 10px 0;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  cursor: pointer;
+}
+.category-bar meter {
+  grid-column: 1 / -1;
+}
+.finance-view meter {
+  display: block;
+  width: 100%;
+  height: 10px;
+}
+.finance-table-wrap {
+  overflow: auto;
+}
+.finance-view table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+.finance-view th,
+.finance-view td {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--border-5);
+}
+.finance-view caption {
+  text-align: left;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.finance-description {
+  min-width: 140px;
+  max-width: 300px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.finance-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.finance-pagination,
+.finance-category-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+}
+.finance-panel summary {
+  cursor: pointer;
+  margin-bottom: 16px;
+}
+@media (max-width: 700px) {
+  .finance-cards,
+  .finance-charts {
+    grid-template-columns: 1fr;
+  }
+  .finance-category-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .finance-pagination {
+    font-size: 11px;
+  }
+}
+
+/* Destaque por urgência e prioridade: a barra à esquerda usa sombra interna para não
+   deslocar o conteúdo da linha, e a cor vem das mesmas variáveis do prazo, que já mudam
+   com o tema. Nunca é só cor: o texto do prazo também muda de peso. */
+.task-row.urgency-late {
+  box-shadow: inset 3px 0 0 var(--text-45);
+}
+.task-row.urgency-today {
+  box-shadow: inset 3px 0 0 var(--text-46);
+}
+.task-row.urgency-soon {
+  box-shadow: inset 3px 0 0 var(--text-44);
+}
+.task-row.urgency-late .task-due,
+.task-row.urgency-today .task-due {
+  font-weight: 700;
+}
+.task-row.urgency-soon .task-due {
+  color: var(--text-46);
+  font-weight: 600;
+}
+.task-row.priority-row-high .task-title strong {
+  font-weight: 700;
+}
+.task-row.priority-row-high .priority-high {
+  font-weight: 700;
+}
+.task-row.priority-row-high .priority-high i {
+  width: 6px;
+  height: 6px;
+}
+
+.notes-view {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+.notes-search {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  max-width: 420px;
+}
+.notes-search input {
+  padding: 10px;
+  border: 1px solid var(--border-5);
+  border-radius: 8px;
+  background: var(--bg-1);
+  color: inherit;
+}
+.notes-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.note-card {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  text-align: left;
+  padding: 18px;
+  min-height: 130px;
+  border: 1px solid var(--border-5);
+  border-radius: 14px;
+  background: var(--bg-1);
+  color: inherit;
+  cursor: pointer;
+}
+.note-card span {
+  font-size: 13px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.note-card small {
+  font-size: 11px;
+  opacity: 0.75;
+}
+.note-files {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+.note-files h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+.note-file-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-5);
+  padding-bottom: 8px;
+}
+@media (max-width: 720px) {
+  .notes-list {
+    grid-template-columns: 1fr;
   }
 }

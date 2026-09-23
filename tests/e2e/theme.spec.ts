@@ -1,11 +1,13 @@
 import { test, expect } from '@playwright/test';
+import { session } from './session';
 
 test('tema claro e escuro: a escolha persiste, o contraste vira e nada fica invisível', async ({
+  browser,
+  context,
   page,
 }) => {
+  await context.addCookies(await session(browser));
   await page.goto('/');
-  await page.getByLabel('Sua senha').fill('test-password-only');
-  await page.getByRole('button', { name: 'Entrar no meu espaço' }).click();
   // A conversa com o assistente é a tela inicial; o painel fica a um clique na navegação.
   await expect(page.getByLabel('Sua mensagem')).toBeVisible();
   await page

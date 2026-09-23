@@ -1,5 +1,8 @@
+import { isFinance } from './finance/rules';
+import { loadFinance } from './finance/store';
+import { panelCommandsSchema } from './domain';
 import { randomUUID } from 'node:crypto';
-import { db, loadState, saveState, lock, type Database, type Sql } from './db';
+import { databaseHint, db, loadState, saveState, lock, type Database, type Sql } from './db';
 import { DomainError, execute, purge, UNSUPPORTED } from './domain';
 import { interpret } from './interpreter';
 import { generateReply, listProviders } from './llm';
@@ -85,7 +88,9 @@ export async function panelAction(commands: unknown, requestId: string, database
       return { reply: prior.reply, clarification: prior.status === 'clarification' };
     }
     const { state: before } = await currentState(tx);
-    const result = execute(before, commands, 'panel');
+    const validated = panelCommandsSchema.parse(commands);
+    if (validated.some(isFinance)) before.finance = await loadFinance(tx);
+    const result = execute(before, validated, 'panel');
     await saveState(tx, before, result.state);
     await tx.query(
       'INSERT INTO agenda_messages(id,external_id,channel,reply,status,body) VALUES($1,$2,$3,$4,$5,$6)',
@@ -147,7 +152,7 @@ export async function startChat(
     if (existing) {
       if (existing.body !== null && existing.body !== text)
         throw new DomainError('Este pedido já foi usado para outra mensagem.', 409);
-      return { prior: existing };
+      if (existing.status !== 'failed' || existing.body === null) return { prior: existing };
     }
     const busy = await tx.query(
       "SELECT id FROM agenda_messages WHERE channel='web' AND status='processing' LIMIT 1",
@@ -160,7 +165,7 @@ export async function startChat(
     const { state } = await currentState(tx);
     const now = new Date();
     const message: Message = {
-      id: randomUUID(),
+      id: existing?.id ?? randomUUID(),
       external_id: `web:${requestId}`,
       channel: 'web',
       body: text,
@@ -171,7 +176,8 @@ export async function startChat(
     };
     await tx.query(
       `INSERT INTO agenda_messages(id,external_id,channel,body,status,lease_token,lease_until,created_at)
-       VALUES($1,$2,'web',$3,'processing',$4,now()+interval '150 seconds',$5)`,
+       VALUES($1,$2,'web',$3,'processing',$4,now()+interval '150 seconds',$5)
+       ON CONFLICT(id) DO UPDATE SET status='processing',reply=NULL,error=NULL,lease_token=$4,lease_until=now()+interval '150 seconds',updated_at=now()`,
       [message.id, message.external_id, text, token, now.toISOString()],
     );
     return { message, state };
@@ -204,7 +210,8 @@ export async function startChat(
             'Os dados mudaram durante a interpretação. Nenhuma ação deste pedido foi aplicada; reenvie a mensagem.',
             409,
           );
-        const result = execute(before, commands, 'web');
+        if (commands.some(isFinance)) before.finance = await loadFinance(tx);
+        const result = execute(before, commands, 'web', new Date(message.created_at));
         await saveState(tx, before, result.state);
         const status = result.clarification ? 'clarification' : 'done';
         await tx.query(
@@ -215,14 +222,18 @@ export async function startChat(
           id: message.id,
           status,
           reply: result.reply,
-          natural: result.state.settings.naturalReply !== false,
+          natural: !commands.some(isFinance) && result.state.settings.naturalReply !== false,
         };
       });
     } catch (error) {
+      // Erro do PostgreSQL vira a mesma dica que a API dá nas outras rotas: sem isso, migração
+      // não aplicada e credencial vencida chegavam à conversa como o mesmo "não foi possível".
       const safe =
         error instanceof DomainError
           ? error.message
-          : 'Não foi possível processar o pedido. Nenhuma alteração foi confirmada.';
+          : (error as { code?: unknown })?.code
+            ? `Não foi possível processar o pedido. Nenhuma alteração foi confirmada. ${databaseHint(error)}`
+            : 'Não foi possível processar o pedido. Nenhuma alteração foi confirmada.';
       await connection.query(
         `UPDATE agenda_messages SET status='failed',error=$3,lease_token=NULL,lease_until=NULL,updated_at=now()
        WHERE id=$1 AND status='processing' AND lease_token=$2`,

@@ -114,6 +114,17 @@ async function checkDatabase(database: Database) {
     console.log(`  IA: ${providers.rows.length} provedor(es) cadastrado(s), chaves conferidas.`);
   else warn('Nenhuma IA cadastrada neste banco. O app entende só frases em formato exato.');
 
+  for (const table of tableNames) {
+    for (const privilege of ['SELECT', 'INSERT', 'UPDATE', 'DELETE']) {
+      const result = await database.query<{ allowed: boolean }>(
+        'SELECT has_table_privilege(current_user, $1, $2) AS allowed',
+        [table, privilege],
+      );
+      if (!result.rows[0]?.allowed)
+        fail(`Falta ${privilege} em ${table}. Atualize os GRANTs de scripts/runtime-role.sql.`);
+    }
+  }
+
   // O app publicado não deve poder mudar o schema. Isto é endurecimento, não requisito.
   const probe = `agenda_deploy_check_${Date.now()}`;
   try {

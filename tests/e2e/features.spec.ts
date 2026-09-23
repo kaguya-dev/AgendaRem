@@ -25,6 +25,12 @@ async function commands(page: Page, values: unknown[]) {
   expect(result.ok(), await result.text()).toBeTruthy();
   await page.getByRole('button', { name: 'Atualizar tarefas', exact: true }).click();
 }
+async function sync(page: Page) {
+  await page
+    .getByRole('button', { name: 'Tentar sincronizar' })
+    .click({ timeout: 5000 })
+    .catch(() => {});
+}
 async function settings(page: Page) {
   await page.getByRole('button', { name: 'Configurações', exact: true }).click();
 }
@@ -195,7 +201,10 @@ test('offline persiste edição ao recarregar e sincroniza com o servidor ao rec
     page.getByRole('button', { name: 'Editar Editada sem internet', exact: true }),
   ).toBeVisible();
   await context.setOffline(false);
-  await page.getByRole('button', { name: 'Tentar sincronizar' }).click();
+  // Voltar a ter conexão já dispara a sincronização sozinha: o botão é só o empurrão manual e
+  // pode sumir antes do clique, quando a fila esvazia primeiro. O que precisa valer é o
+  // resultado — banner fora da tela e alteração no servidor.
+  await sync(page);
   await expect(page.locator('.sync-banner')).not.toBeVisible();
   const state = await (await page.request.get('/api/state')).json();
   expect(state.tasks.some((t: { title: string }) => t.title === 'Editada sem internet')).toBe(true);
@@ -224,7 +233,7 @@ test('offline persiste edição ao recarregar e sincroniza com o servidor ao rec
   });
   expect(external.ok()).toBeTruthy();
   await context.setOffline(false);
-  await page.getByRole('button', { name: 'Tentar sincronizar' }).click();
+  await sync(page);
   await expect(page.locator('.sync-banner')).toContainText('alterada em outra tela');
   const actual = await (await page.request.get('/api/state')).json();
   expect(actual.tasks.find((t: { id: number }) => t.id === task.id).title).toBe(

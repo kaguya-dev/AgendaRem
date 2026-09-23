@@ -12,7 +12,13 @@ export function BackupDialog({
   close: () => void;
   refresh: () => Promise<void>;
 }) {
-  const [backup, setBackup] = useState<{ tasks: unknown[]; groups: unknown[] } | null>(null);
+  const [backup, setBackup] = useState<{
+    version: number;
+    tasks: unknown[];
+    groups: unknown[];
+    finance?: { categories: unknown[]; entries: unknown[]; templates?: unknown[] };
+  } | null>(null);
+  const [previewRevision, setPreviewRevision] = useState(data.settings.revision);
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [confirmed, setConfirmed] = useState(false);
@@ -43,7 +49,7 @@ export function BackupDialog({
     try {
       await api('backup/import', {
         backup,
-        expectedRevision: data.settings.revision,
+        expectedRevision: previewRevision,
         password,
         code: code || undefined,
       });
@@ -58,7 +64,7 @@ export function BackupDialog({
   return (
     <Dialog
       title="Exportar e restaurar agenda"
-      subtitle="O arquivo contém tarefas, grupos e o prazo da lixeira. Não inclui senhas nem chaves de IA."
+      subtitle="O arquivo contém tarefas, grupos, finanças e o prazo da lixeira. Não inclui senhas nem chaves de IA."
       close={close}
     >
       <div className="editor-form">
@@ -88,12 +94,16 @@ export function BackupDialog({
               const value = JSON.parse(await file.text());
               if (
                 value.format !== 'AgendaMagno' ||
-                value.version !== 1 ||
+                ![1, 2].includes(value.version) ||
+                (value.version === 2 &&
+                  (!Array.isArray(value.finance?.categories) ||
+                    !Array.isArray(value.finance?.entries))) ||
                 !Array.isArray(value.tasks) ||
                 !Array.isArray(value.groups)
               )
                 throw new Error('Formato de backup inválido.');
               setBackup(value);
+              setPreviewRevision(data.settings.revision);
             } catch (e) {
               setError((e as Error).message);
             }
@@ -106,6 +116,15 @@ export function BackupDialog({
               A agenda atual tem {data.tasks.length} tarefas e {data.groups.length} grupos. Será
               substituída por {backup.tasks.length} tarefas e {backup.groups.length} grupos do
               arquivo. O histórico de ações e a conversa atual serão limpos.
+            </p>
+            <p>
+              {backup.version === 2
+                ? `Todos os lançamentos, categorias e modelos financeiros atuais serão substituídos por ${backup.finance!.entries.length} lançamentos, ${backup.finance!.categories.length} categorias e ${backup.finance!.templates?.length ?? 0} modelos do arquivo.`
+                : 'Este arquivo é versão 1: o financeiro atual será preservado.'}
+            </p>
+            <p>
+              Anotações e seus arquivos não entram no backup: a restauração não os apaga nem os
+              devolve.
             </p>
             <p>Baixe uma cópia da agenda atual antes de continuar.</p>
             <label htmlFor="backup-password">Senha atual</label>

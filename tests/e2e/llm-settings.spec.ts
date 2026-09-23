@@ -111,9 +111,29 @@ test('uso distingue tokens confirmados, estimativas e falhas; pausa expira na te
       },
     });
   });
+  await page.route('**/api/auth', (r) =>
+    r.fulfill({
+      json: {
+        authenticated: true,
+        trusted: false,
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      },
+    }),
+  );
+  await page.route('**/api/state', (r) =>
+    r.fulfill({
+      json: {
+        tasks: [],
+        groups: [],
+        history: [],
+        messages: [],
+        settings: { retentionDays: 30, revision: 0, naturalReply: false },
+        llm: 'configured',
+        storage: 'local',
+      },
+    }),
+  );
   await page.goto('/');
-  await page.getByLabel('Sua senha').fill('test-password-only');
-  await page.getByRole('button', { name: 'Entrar no meu espaço' }).click();
   await page.getByRole('button', { name: 'Modelos de IA', exact: true }).click();
   await expect(page.getByText('Em pausa', { exact: true })).toBeVisible();
   await expect(page.getByText(/5.000 confirmados pela API/)).toBeVisible();

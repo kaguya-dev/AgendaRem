@@ -1,3 +1,4 @@
+import { loadFinance, saveFinance } from './finance/store';
 import { mkdir } from 'node:fs/promises';
 import { Pool } from 'pg';
 import { PGlite } from '@electric-sql/pglite';
@@ -131,7 +132,7 @@ const tables = {
   operations: 'agenda_operations',
   conversations: 'agenda_conversations',
 } as const;
-export async function loadState(tx: Sql): Promise<State> {
+export async function loadState(tx: Sql, includeFinance = false): Promise<State> {
   const state = emptyState();
   state.settings = (
     await tx.query<{ data: State['settings'] }>('SELECT data FROM agenda_meta WHERE id=1')
@@ -144,9 +145,12 @@ export async function loadState(tx: Sql): Promise<State> {
     (a, b) => (a.sequence ?? 0) - (b.sequence ?? 0) || a.at.localeCompare(b.at),
   );
   state.history.sort((a, b) => a.at.localeCompare(b.at));
+  if (includeFinance) state.finance = await loadFinance(tx);
   return state;
 }
 export async function saveState(tx: Sql, before: State, after: State) {
+  if (after.finance)
+    await saveFinance(tx, before.finance ?? (await loadFinance(tx)), after.finance);
   if (JSON.stringify(before.settings) !== JSON.stringify(after.settings))
     await tx.query('UPDATE agenda_meta SET data=$1::jsonb WHERE id=1', [
       JSON.stringify(after.settings),

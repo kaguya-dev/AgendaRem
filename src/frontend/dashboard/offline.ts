@@ -36,7 +36,9 @@ export async function remember(data: Data) {
   if (!offlineEnabled()) return;
   const expiresAt =
     sessionStorage.getItem('agenda:expires') ?? localStorage.getItem('agenda:expires');
-  if (expiresAt) await access('snapshot', { data, expiresAt });
+  // Conversas podem conter finanças; o modo offline guarda somente dados de tarefas.
+  const taskData = { ...data, messages: [], history: data.history.filter((h) => h.taskId > 0) };
+  if (expiresAt) await access('snapshot', { data: taskData, expiresAt });
 }
 export async function cached() {
   if (!offlineEnabled()) return null;

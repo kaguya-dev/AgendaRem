@@ -1,8 +1,68 @@
-# AgendaMagno
+# AgendaMagna
 
-Agenda pessoal com painel e conversa no navegador, acessível pelo notebook e pelo celular. Frontend e API ficam no mesmo projeto Next.js na Vercel; os dados ficam no PostgreSQL do Neon. A conversa é processada durante a própria requisição, sem serviços de automação ou processos permanentes. Interface em português, fuso `America/Bahia` e acesso de um único proprietário, com senha, duas etapas opcionais e dispositivos confiáveis.
+Agenda pessoal com painel e conversa no navegador, acessível pelo notebook e pelo celular. A conversa é processada durante a própria requisição, sem serviços de automação ou processos permanentes. Interface em português, fuso `America/Bahia` e acesso de um único proprietário, com senha, duas etapas opcionais e dispositivos confiáveis.
 
 Os provedores de IA, modelos, chaves, prioridades e limites são cadastrados no próprio painel. A aplicação troca de provedor quando o anterior atinge um limite ou fica indisponível. A IA interpreta todas as mensagens da conversa e, se você quiser, reescreve a resposta em linguagem natural numa segunda chamada. Enquanto nenhum provedor estiver cadastrado e ativo, um modo reserva entende apenas algumas frases em formato exato.
+
+## O que dá para fazer
+
+Uma explicação sem termos técnicos de tudo o que o aplicativo faz hoje.
+
+**Suas tarefas**
+
+- Anotar o que precisa fazer, com um texto de apoio (contexto, links, lembretes escritos), prioridade, data, horário e etiquetas.
+- Separar por grupos, com cor e ícone, e reordenar do jeito que fizer sentido. Grupos que saíram de cena podem ser arquivados sem perder nada.
+- Quebrar uma tarefa em uma lista de etapas e ir marcando conforme avança.
+- Repetir tarefas que voltam sempre: todo dia, toda semana nos dias escolhidos, ou todo mês. Ao concluir uma, a próxima já nasce na data certa.
+- Marcar como feita no círculo ao lado do nome. A tarefa vai para a lista de concluídas, e não para o lixo.
+- Descartar o que não serve mais. Fica na lixeira pelo prazo que você escolher (30 dias, de início) e dá para restaurar.
+- Ver o que vence hoje, o que está atrasado e o que ficou sem data. Buscar por palavra no título ou no texto de apoio.
+- Selecionar várias tarefas de uma vez para mover, concluir, mudar a prioridade ou descartar.
+- Tarefas atrasadas, de hoje ou dos próximos dias ganham uma marca colorida na lateral; prioridade alta aparece em destaque.
+- Ver a semana ou o mês no calendário e arrastar uma tarefa para outro dia.
+- Desfazer a última alteração dentro de 24 horas, e conferir no histórico o que foi feito e quando.
+
+**Conversar com o aplicativo**
+
+- Escrever do seu jeito — “anota comprar pilhas”, “finalizei a #3”, “o que vence hoje?” — e deixar o assistente criar, mudar, concluir ou consultar.
+- Mandar várias mensagens seguidas sem esperar: elas entram numa fila, aparecem como “Em espera” e são executadas uma de cada vez, na ordem.
+- Tirar da fila uma mensagem que você mandou sem querer, antes de ela rodar.
+- Quando algo dá errado, a fila para e você escolhe tentar de novo ou descartar aquele pedido e seguir.
+- Ditar pelo microfone em vez de digitar, revisar o texto e só então enviar.
+- Se o pedido estiver pela metade (“gastei no mercado”), o assistente pergunta o que falta antes de gravar.
+- Você escolhe quais IAs o aplicativo usa e em que ordem, com limite diário para cada uma. Se uma falhar ou acabar a cota, ele passa para a próxima. Sem nenhuma IA cadastrada, ainda dá para usar frases em formato exato.
+
+**Dinheiro**
+
+- Registrar o que entrou e o que saiu, com valor, data, descrição e categoria.
+- Usar as categorias que já vêm prontas (salário, alimentação, transporte, moradia, saúde, estudos, lazer, compras…) ou criar as suas, inclusive pela conversa.
+- Ver no mês: quanto recebeu, quanto gastou e o que sobrou, além da comparação com o mês anterior.
+- Ver quanto entrou em cada categoria e quanto saiu em cada categoria, lado a lado, e clicar numa delas para abrir os lançamentos.
+- Acompanhar a evolução dia a dia e filtrar por mês, período, tipo ou categoria.
+- Guardar modelos do que se repete (aluguel, salário, mensalidade) e lançar com um clique, escolhendo a data na hora.
+- Corrigir, excluir e restaurar lançamentos; arquivar categorias que não usa mais sem perder o histórico.
+- Falar com o assistente: “gastei 42,90 no almoço hoje”, “recebi 3 mil de salário ontem”, “quanto gastei com comida este mês?”.
+
+**Anotações**
+
+- Guardar textos soltos, sem prazo nem cobrança: cada um com um título e um espaço para escrever à vontade.
+- Anexar arquivos à anotação (até 3 MB cada, 10 por anotação) e baixá-los depois.
+- Procurar por qualquer palavra do título ou do texto.
+
+**Avisos e uso no celular**
+
+- Escolher, em cada tarefa, com quanta antecedência quer ser avisado. O aviso aparece enquanto o aplicativo estiver aberto; não há aviso com o aplicativo fechado.
+- Instalar na tela de início do celular e usar como se fosse um aplicativo.
+- Trabalhar sem internet nas tarefas: o que você criar ou mudar fica pendente e sobe sozinho quando a conexão voltar. Financeiro, anotações e assistente precisam de internet.
+
+**Sua conta e seus dados**
+
+- Entrar com senha, marcar o aparelho como confiável por 90 dias e ver a lista de dispositivos conectados, encerrando o acesso de qualquer um deles.
+- Ligar a verificação em duas etapas por aplicativo autenticador, com códigos de recuperação para guardar.
+- Baixar uma cópia de tudo (tarefas, grupos e finanças) e restaurar depois. As anotações e seus arquivos ainda não entram nessa cópia.
+- Escolher tema claro ou escuro. Tudo em português, com datas no fuso da Bahia.
+
+O nome que aparece na tela é **AgendaMagna**. O pacote, as tabelas e o campo de identificação do arquivo de backup seguem com o nome antigo, para não invalidar os backups já salvos.
 
 ## Testar localmente
 
@@ -132,6 +192,9 @@ Defina `CRON_SECRET` em produção: a Vercel envia automaticamente `Authorizatio
 - Conversa com o assistente como tela inicial do painel, em tela cheia: é o que abre ao entrar, e a lista de tarefas fica a um clique na navegação lateral.
 - Pedidos fora do catálogo de operações recebem “Não consigo fazer isso ainda.” com o motivo, em vez de uma pergunta que não levaria a lugar nenhum.
 - Reescrita opcional das respostas em linguagem natural por uma segunda chamada à IA, com conferência de identificadores, datas e linhas de tarefas antes de aceitar o texto.
+- Destaque na lista por urgência e prioridade: barra colorida à esquerda para atrasadas, para hoje e para os próximos três dias, com o prazo em negrito, e prioridade alta com título e etiqueta reforçados. Nunca é só cor — o peso do texto muda junto.
+- Anotações soltas com título, texto longo, busca e arquivos anexados no banco.
+- Modelos de lançamento no financeiro, para repetir com um clique o que é fixo todo mês.
 
 Áudio, contas para vários usuários e envio de notificações com o app fechado continuam fora desta versão; pedidos assim são recusados com “Não consigo fazer isso ainda.”. Não foram adicionados controle de contexto privado da IA, prévia das ações da IA ou histórico detalhado de consumo por chamada.
 
@@ -198,6 +261,7 @@ src/frontend/                 Interface — tudo o que roda no navegador
   llm-settings.tsx              Cadastro de provedores de IA no painel
 
 src/backend/                  Regras, dados e integrações — nada de JSX aqui
+  finance/                      Regras financeiras, valores em centavos e consultas paginadas
   domain/                       Regras puras: tipos, comandos, busca de tarefas/grupos, lixeira
     types.ts                      Tipos de estado e o schema dos comandos
     format.ts                     Data, fuso e rótulos
@@ -219,7 +283,7 @@ vercel.json                   Limpeza diária em produção
 tests/                        Testes de regras, integração e navegador
 ```
 
-O front-end só fala com o backend por `fetch('/api/...')`; nunca importa nada de `src/backend/` diretamente, e o navegador nunca vê chave de banco ou de IA.
+O front-end só fala com o backend por `fetch('/api/...')`; nunca importa nada de `src/backend/` em tempo de execução (somente tipos compartilhados), e o navegador nunca vê chave de banco ou de IA.
 
 ```bash
 npm test
@@ -245,13 +309,13 @@ No login, marque **Confiar neste dispositivo por 90 dias** apenas em aparelho pe
 
 Ative **Permitir acesso offline neste dispositivo** nas configurações enquanto conectado. O app guarda uma cópia pessoal em IndexedDB e arquivos da interface no cache; não guarda a senha nem chaves de IA. A cópia tem a mesma validade máxima da sessão, é removida ao sair/receber uma recusa de autenticação e pode ser apagada desativando a opção. Proteja o aparelho com bloqueio de tela: a cópia offline é legível para quem tem acesso ao perfil do navegador. Uma revogação feita em outro aparelho só pode ser detectada quando este voltar à internet.
 
-É possível criar, editar, concluir, descartar e restaurar tarefas offline. As mudanças ficam identificadas como pendentes, sobrevivem a recarregamentos e são enviadas na ordem quando o app volta à conexão. IDs de requisição evitam execução duplicada após falhas de rede. Alterações concorrentes geram conflito, interrompem a fila e oferecem descartar as pendências e refazer a edição com os dados atuais. Tarefas criadas offline ficam editáveis após sincronizar. Gerenciamento de grupos, importação, segurança e assistente exigem internet. Abra e recarregue o app conectado uma vez para preparar os arquivos de navegação offline. Para testar isso localmente, use `npm run build` e `npm start`; o servidor de desenvolvimento depende de conexão para inicializar sua interface.
+É possível criar, editar, concluir, descartar e restaurar tarefas offline. As mudanças ficam identificadas como pendentes, sobrevivem a recarregamentos e são enviadas na ordem quando o app volta à conexão. IDs de requisição evitam execução duplicada após falhas de rede. Alterações concorrentes geram conflito, interrompem a fila e oferecem descartar as pendências e refazer a edição com os dados atuais. Tarefas criadas offline ficam editáveis após sincronizar. Gerenciamento de grupos, importação, segurança, financeiro e execução do assistente exigem internet. O cache offline guarda tarefas e grupos; conversas e histórico financeiro ficam fora dele. Abra e recarregue o app conectado uma vez para preparar os arquivos de navegação offline. Para testar isso localmente, use `npm run build` e `npm start`; o servidor de desenvolvimento depende de conexão para inicializar sua interface.
 
 Em cada tarefa, escolha a antecedência do lembrete. Nas configurações, ative notificações e aceite a permissão do navegador. Os avisos usam o título da tarefa; sem horário, consideram 09:00 em `America/Bahia`. São verificados a cada 30 segundos enquanto o app está aberto, inclusive avisos atrasados em até 24 horas; grupos arquivados e tarefas concluídas/descartadas não notificam. Abas em segundo plano podem sofrer atrasos do navegador. Não há envio com o app fechado. [Limites e funcionamento das notificações](https://developer.mozilla.org/en-US/docs/Web/API/Notifications_API).
 
 ## Exportação e restauração
 
-Use **Configurações → Exportar e restaurar**. Antes de restaurar, baixe uma cópia da agenda atual. O painel mostra a contagem de grupos e tarefas e exige confirmação e senha (e duas etapas, se ativa). O servidor valida o formato, limites, referências e a revisão da agenda; uma edição concorrente interrompe a restauração. Importar substitui tarefas, grupos e retenção e limpa histórico de ações/conversa. Credenciais, modelos e sessões não são importados. O limite do arquivo é 2 MB, até 10 mil tarefas e mil grupos. O backup PostgreSQL continua sendo necessário para recuperar todos os dados administrativos e as chaves criptografadas.
+Use **Configurações → Exportar e restaurar**. Antes de restaurar, baixe uma cópia da agenda atual. O backup exportado é versão 2 e inclui categorias e lançamentos financeiros, inclusive excluídos. O painel mostra a contagem de grupos e tarefas e exige confirmação e senha (e duas etapas, se ativa). O servidor valida o formato, limites, referências e a revisão da agenda; uma edição concorrente interrompe a restauração. Importar substitui tarefas, grupos e retenção e limpa histórico de ações/conversa. Na versão 2, a prévia também informa a substituição de todas as categorias e lançamentos financeiros. Arquivos da versão 1 continuam aceitos e preservam o financeiro existente. Credenciais, modelos e sessões não são importados. O limite do arquivo é 2 MB, até 10 mil tarefas, mil grupos, 10 mil lançamentos e mil categorias. O backup PostgreSQL continua sendo necessário para recuperar todos os dados administrativos e as chaves criptografadas.
 
 ## Permissões do banco
 
@@ -269,10 +333,51 @@ As consultas usam parâmetros para valores e uma lista fixa de tabelas para iden
 
 ## Como o assistente responde
 
-A mensagem é aceita em duas etapas. A primeira grava o texto e reserva o pedido, e é ela que responde à requisição — em menos de um segundo, antes de qualquer chamada à IA. A segunda interpreta e executa, depois da resposta. Você pode fechar a aba, trocar de tela ou perder a conexão: o pedido termina no servidor, e a resposta aparece na conversa quando você voltar. Enquanto um pedido está em andamento, a tela consulta a cada 2 segundos e o campo de escrita fica travado, porque as mensagens são processadas uma de cada vez. Se o servidor for interrompido no meio, a reserva vence em 150 segundos e a mensagem é marcada como interrompida, para reenvio.
+A mensagem é aceita em duas etapas. A primeira grava o texto e reserva o pedido, e é ela que responde à requisição — em menos de um segundo, antes de qualquer chamada à IA. A segunda interpreta e executa, depois da resposta. Você pode fechar a aba, trocar de tela ou perder a conexão: o pedido termina no servidor, e a resposta aparece na conversa quando você voltar. Enquanto um pedido está em andamento, a tela consulta a cada segundo. O campo continua disponível: novos envios aparecem como “Em espera” e são executados um por vez, na ordem de envio, após a conclusão anterior. Você pode remover itens ainda em espera. Em falhas, a fila pausa e permite tentar novamente com o mesmo identificador ou descartar o item e continuar. Perguntas de esclarecimento pausam a fila: a resposta digitada tem prioridade sobre os itens pendentes. A fila existe apenas na tela atual; sair ou recarregar descarta os itens ainda não enviados, com aviso. O pedido já aceito continua no servidor. Se o servidor for interrompido no meio, a reserva vence em 150 segundos e a mensagem é marcada como interrompida, para reenvio.
 
 Mensagem → contexto limitado + LLM → comandos JSON → validação e execução pelo servidor → resposta montada a partir do que aconteceu → segunda chamada opcional que reescreve essa resposta → texto na tela. O provedor não recebe credenciais de banco e não executa SQL: ele devolve comandos, e quem consulta e altera os dados é o servidor, depois de validar cada campo. Falhas de provedor podem causar tentativas em outras APIs conforme a ordem configurada. Respostas de esclarecimento e “mostrar mais” podem ser resolvidas diretamente quando já existe uma pergunta/lista pendente.
 
-A segunda chamada é só redação. Ela recebe a resposta já pronta — não a agenda — e devolve o mesmo conteúdo em linguagem natural. Antes de ser aceita, a versão reescrita é conferida: cada linha de tarefa (`#7 proposta — 24/09/2026`) e cada opção numerada precisa aparecer igual, na mesma ordem, sem nenhuma a mais ou a menos, e o texto não pode crescer além do dobro do original. Se a conferência falhar, se o modelo não responder ou se não houver modelo disponível, vale a resposta original — uma alteração já gravada nunca se perde por causa do acabamento do texto. Recusas começadas por “Não consigo fazer isso ainda.” não passam por essa chamada. O custo é uma chamada a mais por mensagem, contada nos limites diários, e a resposta pronta (títulos e prazos das tarefas envolvidas) é enviada ao provedor. Desligue em Configurações → Respostas do assistente se preferir o formato direto.
+A segunda chamada é só redação. Ela recebe a resposta já pronta — não a agenda — e devolve o mesmo conteúdo em linguagem natural. Antes de ser aceita, a versão reescrita é conferida: cada linha de tarefa (`#7 proposta — 24/09/2026`) e cada opção numerada precisa aparecer igual, na mesma ordem, sem nenhuma a mais ou a menos, e o texto não pode crescer além do dobro do original. Se a conferência falhar, se o modelo não responder ou se não houver modelo disponível, vale a resposta original — uma alteração já gravada nunca se perde por causa do acabamento do texto. Recusas começadas por “Não consigo fazer isso ainda.” e respostas de operações financeiras não passam por essa chamada; confirmações financeiras usam diretamente os dados gravados e totais calculados pelo servidor. O custo é uma chamada a mais por mensagem, contada nos limites diários, e a resposta pronta (títulos e prazos das tarefas envolvidas) é enviada ao provedor. Desligue em Configurações → Respostas do assistente se preferir o formato direto.
 
-Pedidos que a agenda não sabe atender — enviar e-mail, compartilhar com outra pessoa, áudio, anexos, finanças, reorganização automática — recebem “Não consigo fazer isso ainda.”, seguido de uma frase sobre o que falta. Pedido ambíguo é diferente: aí a resposta é uma pergunta, porque a operação existe e só falta escolher a tarefa, o grupo ou a data.
+Pedidos que a agenda não sabe atender — enviar e-mail, compartilhar com outra pessoa, arquivos de áudio, anexos, integração bancária, investimentos, reorganização automática — recebem “Não consigo fazer isso ainda.”, seguido de uma frase sobre o que falta. Pedido ambíguo é diferente: aí a resposta é uma pergunta, porque a operação existe e só falta escolher a tarefa, o grupo ou a data.
+
+## Ditado e descrição de tarefas
+
+No assistente, use **Ditar mensagem**, fale em português e pare para revisar o texto antes de enviar. O rascunho digitado é preservado, e **Cancelar ditado** o restaura. A escuta termina em até 60 segundos; textos acima de 6.000 caracteres precisam ser reduzidos antes do envio. É possível ditar a próxima mensagem enquanto outra está sendo executada.
+
+O recurso depende de `SpeechRecognition`/`webkitSpeechRecognition`. O navegador pode enviar áudio ao serviço de reconhecimento; o app não armazena áudio nem recebe arquivos de voz. Se o recurso ou o microfone não estiver disponível, continue digitando. Compatibilidade e qualidade do microfone precisam ser conferidas no aparelho usado; os testes automatizados simulam eventos. Referências: [SpeechRecognition](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition) e [Web Speech API](https://webaudio.github.io/web-speech-api/).
+
+A prévia de descrição das tarefas aparece também no celular. Toque no item para ler ou editar o texto completo, com quebras de linha e limite de 5.000 caracteres. Tarefas na lixeira mantêm a leitura; restaure antes de editar.
+
+## Financeiro
+
+Abra **Financeiro → Novo lançamento** para registrar receitas ou despesas recebidas/gastas. Valores são em BRL, no formato `1.234,56`, entre R$ 0,01 e R$ 999.999.999,99, armazenados em centavos inteiros. Datas são civis, com referência de hoje em `America/Bahia`. Cadastre, renomeie, arquive ou reative categorias em **Gerenciar categorias**. Arquivar preserva os vínculos antigos; uma categoria com lançamentos não pode mudar para um tipo incompatível.
+
+O resumo mostra receitas, despesas e resultado mensal (receitas menos despesas), o que entrou e o que saiu em cada categoria — em duas listas separadas, para que uma receita não esconda um gasto da mesma categoria — e a evolução diária. Mês e ano são escolhidos em listas, e não em `input type="month"`, porque o Firefox não desenha o seletor desse campo. Selecione também intervalo, tipo ou categoria; clicar em uma categoria filtra os lançamentos por ela e pelo tipo correspondente. A lista tem páginas de 20 itens, e os totais consideram todo o período filtrado. Excluídos não entram nos gráficos e podem ser restaurados em **Ver excluídos**. A comparação usa o mês anterior ao início do período selecionado e os mesmos filtros de tipo/categoria.
+
+Em **Modelos de lançamento**, guarde o que se repete todo mês (aluguel, salário, mensalidade) com tipo, valor, descrição e categoria. **Lançar** abre o formulário já preenchido para você escolher a data e confirmar: o modelo não gera lançamento sozinho, não tem data e continua salvo depois de usado. Excluir um modelo não mexe nos lançamentos já feitos.
+
+Com uma IA cadastrada, envie “Gastei 42,90 no almoço hoje”, “Recebi 3 mil de salário ontem” ou “Quanto gastei com comida este mês?”. O interpretador sugere uma categoria existente na mesma chamada; você pode corrigi-la no painel. Peça “crie a categoria besteiras” para cadastrar uma categoria pela conversa — sem o tipo dito, ela nasce como categoria de despesa, e a resposta diz isso. Modelos de lançamento são só do painel. Se faltar valor ou identificação, o assistente pergunta antes de gravar. Exclusões pela conversa exigem confirmação. Pedidos com tarefas e finanças são atômicos. O histórico registra as mudanças, mas o desfazer global não reverte finanças; faça a correção ou restauração pela tela financeira.
+
+O financeiro exige conexão. O cadastro manual continua disponível quando a IA está sem cota. Não há sincronização bancária, cartões/faturas, parcelas, investimentos, múltiplas moedas ou aprendizado automático de categorias.
+
+## Anotações
+
+**Anotações** guarda texto solto: um título, um espaço de até 20.000 caracteres e arquivos anexados. A busca procura no título e no texto, e a lista tem páginas de 20 anotações, da mais recente para a mais antiga.
+
+Cada anexo pode ter até 3 MB e cada anotação aceita até 10 arquivos. O limite acompanha o teto de 4,5 MB que a Vercel aplica ao corpo de uma requisição, já contando o crescimento do base64. Os arquivos ficam no próprio banco, em base64, e são enviados e baixados pelas rotas `notes/file`; a lista de anotações nunca carrega o conteúdo deles. Excluir uma anotação apaga os arquivos junto, e a confirmação avisa. Salvar confere a versão: se a anotação mudou em outro aparelho, o salvamento é recusado em vez de sobrescrever.
+
+Anotações exigem conexão e **não entram no arquivo de exportação**. Restaurar um backup não apaga nem devolve anotações — elas ficam intocadas. Para não perdê-las, conte com o backup do PostgreSQL.
+
+### Migração desta entrega
+
+Execute `npm run db:migrate` com a conexão administrativa antes de publicar. A migração acrescenta `agenda_finance_categories`, `agenda_finance_entries`, `agenda_finance_templates`, `agenda_notes` e `agenda_note_files`, seus índices e dez categorias iniciais, sem apagar tarefas nem duplicar categorias em execuções posteriores. Bancos locais aplicam a migração na inicialização.
+
+Para um papel `agenda_runtime` já existente, execute somente o GRANT abaixo com a conexão administrativa (a criação do papel em `scripts/runtime-role.sql` é necessária apenas na primeira instalação):
+
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE ON agenda_finance_categories, agenda_finance_entries,
+  agenda_finance_templates, agenda_notes, agenda_note_files TO agenda_runtime;
+```
+
+`npm run deploy:check` confere a presença das tabelas e os privilégios de leitura/escrita. Valide migração e permissões no PostgreSQL de homologação antes da publicação. Os testes locais usam PGlite e bancos temporários, sem modificar os dados reais.

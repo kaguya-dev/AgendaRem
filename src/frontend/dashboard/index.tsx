@@ -18,6 +18,7 @@ import {
   Menu,
   MessageCircle,
   MoreHorizontal,
+  NotebookPen,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -33,7 +34,7 @@ import {
 import type { Command } from '@/backend/domain';
 import LlmSettings from '@/frontend/llm-settings';
 import { api } from './api';
-import { due, labels, overdue, priorityLabels, timestamp, today } from './format';
+import { due, labels, overdue, priorityLabels, timestamp, today, urgency } from './format';
 import { Brand } from './Brand';
 import { Dialog } from './Dialog';
 import { Login } from './Login';
@@ -56,6 +57,8 @@ import {
 } from './offline';
 import { GroupDialog, groupIcons } from './GroupDialog';
 import { SettingsDialog } from './SettingsDialog';
+import { Finance } from './Finance';
+import { Notes } from './Notes';
 import { Assistant } from './Assistant';
 import { ActivityDialog } from './ActivityDialog';
 import type { Data, Modal, View } from './types';
@@ -244,12 +247,12 @@ export default function Dashboard() {
               ? await navigator.serviceWorker.getRegistration()
               : undefined;
           if (registration)
-            await registration.showNotification('AgendaMagno · Lembrete', {
+            await registration.showNotification('AgendaMagna · Lembrete', {
               body: task.title,
               icon: '/icon.svg',
               tag: key,
             });
-          else new Notification('AgendaMagno · Lembrete', { body: task.title, tag: key });
+          else new Notification('AgendaMagna · Lembrete', { body: task.title, tag: key });
           localStorage.setItem(key, 'sent');
         } catch {
           /* Permission may have changed while the page was open. */
@@ -307,6 +310,12 @@ export default function Dashboard() {
     }
   }
   function navigate(next: View) {
+    if (
+      view === 'assistant' &&
+      next !== 'assistant' &&
+      !window.dispatchEvent(new Event('agenda:leave-chat', { cancelable: true }))
+    )
+      return;
     setView(next);
     setMobile(false);
     setSearch('');
@@ -392,6 +401,8 @@ export default function Dashboard() {
         <nav aria-label="Navegação principal">
           <span className="nav-label">SUA AGENDA</span>
           {navItem('assistant', 'Assistente', <MessageCircle size={18} />)}
+          {navItem('finance', 'Financeiro', <LayoutGrid size={18} />)}
+          {navItem('notes', 'Anotações', <NotebookPen size={18} />)}
           {navItem('all', 'Todas as tarefas', <LayoutGrid size={18} />, active.length)}
           {navItem(
             'inbox',
@@ -485,6 +496,8 @@ export default function Dashboard() {
             className="nav-item"
             onClick={async () => {
               try {
+                if (!window.dispatchEvent(new Event('agenda:leave-chat', { cancelable: true })))
+                  return;
                 await api('logout', {});
                 window.dispatchEvent(new Event('agenda:logout'));
               } catch (e) {
@@ -538,7 +551,7 @@ export default function Dashboard() {
           </div>
         </header>
         <main className={`main-content${view === 'assistant' ? ' assistant-main' : ''}`}>
-          {view !== 'assistant' && (
+          {view !== 'assistant' && view !== 'finance' && view !== 'notes' && (
             <>
               <section className="page-heading">
                 <div>
@@ -662,7 +675,15 @@ export default function Dashboard() {
             </div>
           )}
           {view === 'assistant' ? (
-            <Assistant data={data} refresh={refresh} />
+            <Assistant data={data} refresh={refresh} offline={isOffline} />
+          ) : view === 'finance' ? (
+            <Finance
+              offline={isOffline}
+              revision={data?.settings.revision ?? 0}
+              refresh={refresh}
+            />
+          ) : view === 'notes' ? (
+            <Notes offline={isOffline} />
           ) : view === 'archived' ? (
             <section className="archive-list">
               <h2>Grupos arquivados</h2>
@@ -819,7 +840,10 @@ export default function Dashboard() {
                   </div>
                 ) : shown.length ? (
                   shown.map((t) => (
-                    <div className={`task-row ${t.trashedAt ? 'trashed' : ''}`} key={t.id}>
+                    <div
+                      className={`task-row ${t.trashedAt ? 'trashed' : ''} ${isTrash ? '' : `urgency-${urgency(t) || 'none'} priority-row-${t.priority}`}`}
+                      key={t.id}
+                    >
                       <div className="task-primary">
                         <input
                           className="task-select"

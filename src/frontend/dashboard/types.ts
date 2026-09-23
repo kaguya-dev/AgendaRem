@@ -1,6 +1,8 @@
 import type { Command, Group, History, Task } from '@/backend/domain';
 
 export type View =
+  | 'notes'
+  | 'finance'
   | 'assistant'
   | 'calendar'
   | 'archived'
