@@ -52,6 +52,26 @@ export function allowedOrigins(): string[] {
 export function sameOrigin(request: Request) {
   const origin = request.headers.get('origin');
   const allowed = allowedOrigins();
+  if (origin && allowed.includes(origin)) return;
+
+  if (origin && process.env.VERCEL !== '1') {
+    try {
+      const { hostname } = new URL(origin);
+      if (
+        hostname === 'localhost' ||
+        hostname === '127.0.0.1' ||
+        hostname.startsWith('192.168.') ||
+        hostname.startsWith('10.') ||
+        hostname.startsWith('172.') ||
+        hostname.endsWith('.local')
+      ) {
+        return;
+      }
+    } catch {
+      /* Invalid origin falls through to error below. */
+    }
+  }
+
   if (!origin || !allowed.includes(origin))
     throw new DomainError(
       `Origem da requisição não autorizada. Este app aceita pedidos de ${allowed.join(' ou ')}. Abra por um desses endereços, ou ajuste APP_URL para o endereço que você usa e publique de novo.`,
