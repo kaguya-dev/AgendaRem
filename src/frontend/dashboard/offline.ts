@@ -5,31 +5,74 @@ type Saved = { data: Data; expiresAt: string };
 const DB = 'agendamagno-offline';
 export const offlineEnabled = () => localStorage.getItem('agenda:offline-enabled') === 'true';
 async function access<T>(key: string, value?: T, remove = false): Promise<T | undefined> {
-  return new Promise((resolve, reject) => {
-    const open = indexedDB.open(DB, 1);
-    open.onupgradeneeded = () => open.result.createObjectStore('data');
-    open.onerror = () => reject(open.error);
-    open.onsuccess = () => {
-      const connection = open.result;
-      const tx = connection.transaction(
-        'data',
-        value !== undefined || remove ? 'readwrite' : 'readonly',
-      );
-      const store = tx.objectStore('data');
-      const request = remove
-        ? store.delete(key)
-        : value !== undefined
-          ? store.put(value, key)
-          : store.get(key);
-      tx.oncomplete = () => {
-        connection.close();
-        resolve(request.result as T);
-      };
-      tx.onerror = () => {
-        connection.close();
-        reject(tx.error);
-      };
+  if (typeof window === 'undefined' || typeof indexedDB === 'undefined') return undefined;
+  return new Promise((resolve) => {
+    let resolved = false;
+    const finish = (result?: T) => {
+      if (!resolved) {
+        resolved = true;
+        resolve(result);
+      }
     };
+    const timer = setTimeout(() => finish(undefined), 2000);
+
+    try {
+      const open = indexedDB.open(DB, 1);
+      open.onupgradeneeded = () => {
+        try {
+          open.result.createObjectStore('data');
+        } catch {
+          /* ignore */
+        }
+      };
+      open.onblocked = () => {
+        clearTimeout(timer);
+        finish(undefined);
+      };
+      open.onerror = () => {
+        clearTimeout(timer);
+        finish(undefined);
+      };
+      open.onsuccess = () => {
+        try {
+          const connection = open.result;
+          const tx = connection.transaction(
+            'data',
+            value !== undefined || remove ? 'readwrite' : 'readonly',
+          );
+          const store = tx.objectStore('data');
+          const request = remove
+            ? store.delete(key)
+            : value !== undefined
+              ? store.put(value, key)
+              : store.get(key);
+          tx.oncomplete = () => {
+            clearTimeout(timer);
+            try {
+              connection.close();
+            } catch {
+              /* ignore */
+            }
+            finish(request.result as T);
+          };
+          tx.onerror = () => {
+            clearTimeout(timer);
+            try {
+              connection.close();
+            } catch {
+              /* ignore */
+            }
+            finish(undefined);
+          };
+        } catch {
+          clearTimeout(timer);
+          finish(undefined);
+        }
+      };
+    } catch {
+      clearTimeout(timer);
+      finish(undefined);
+    }
   });
 }
 export async function remember(data: Data) {

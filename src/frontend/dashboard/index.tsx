@@ -163,27 +163,50 @@ export default function Dashboard() {
   }
   useEffect(() => {
     void registerWorker().catch(() => {});
+    const fallbackTimer = setTimeout(() => {
+      setAuth((current) => (current === null ? false : current));
+    }, 2500);
+
     api<{ authenticated: boolean; expiresAt: string | null; trusted: boolean }>('auth')
       .then(async (r) => {
-        if (r.authenticated && r.expiresAt) {
-          sessionStorage.setItem('agenda:expires', r.expiresAt);
-          if (r.trusted) localStorage.setItem('agenda:expires', r.expiresAt);
-        } else await clearOffline();
+        clearTimeout(fallbackTimer);
         setAuth(r.authenticated);
+        if (r.authenticated && r.expiresAt) {
+          try {
+            sessionStorage.setItem('agenda:expires', r.expiresAt);
+            if (r.trusted) localStorage.setItem('agenda:expires', r.expiresAt);
+          } catch {
+            /* storage full/blocked */
+          }
+        } else {
+          void clearOffline().catch(() => {});
+        }
       })
       .catch(async () => {
-        setAuth(Boolean(await cached()));
+        clearTimeout(fallbackTimer);
+        try {
+          setAuth(Boolean(await cached()));
+        } catch {
+          setAuth(false);
+        }
       });
     const logout = () => {
       setAuth(false);
       setData(null);
       setModal(null);
-      void clearOffline();
-      localStorage.removeItem('agenda:expires');
-      sessionStorage.removeItem('agenda:expires');
+      void clearOffline().catch(() => {});
+      try {
+        localStorage.removeItem('agenda:expires');
+        sessionStorage.removeItem('agenda:expires');
+      } catch {
+        /* ignore */
+      }
     };
     window.addEventListener('agenda:logout', logout);
-    return () => window.removeEventListener('agenda:logout', logout);
+    return () => {
+      clearTimeout(fallbackTimer);
+      window.removeEventListener('agenda:logout', logout);
+    };
   }, []);
   useEffect(() => {
     if (auth) {
