@@ -1,6 +1,38 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
-  <rect width="192" height="192" rx="44" fill="#4A8FD4"/>
-  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="8">
-    <path d="m43 60 10 10 17-21M43 102l10 10 17-21M43 144l10 10 17-21M88 60h58M88 102h58M88 144h40"/>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4A8FD4"/>
+      <stop offset="100%" stop-color="#D46888"/>
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="44" fill="url(#g)"/>
+  <!-- Checklist: checkmarks + lines -->
+  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="7.5">
+    <path d="m40 62 9 9 15-19"/>
+    <path d="M82 62h62"/>
+    <path d="m40 102 9 9 15-19"/>
+    <path d="M82 102h62"/>
+    <path d="m40 142 9 9 15-19"/>
+    <path d="M82 142h44"/>
+  </g>
+  <!-- Crystal flower ornament (Rem's hair accessory) -->
+  <g transform="translate(148,24)" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.9">
+    <!-- Center circle -->
+    <circle cx="0" cy="0" r="4" fill="#fff"/>
+    <!-- Petals -->
+    <path d="M0-4 L2-10 0-13-2-10Z" fill="#fff" opacity="0.85"/>
+    <path d="M4 0 L10 2 13 0 10-2Z" fill="#fff" opacity="0.85"/>
+    <path d="M0 4 L2 10 0 13-2 10Z" fill="#fff" opacity="0.85"/>
+    <path d="M-4 0 L-10 2-13 0-10-2Z" fill="#fff" opacity="0.85"/>
+    <!-- Diagonal petals (smaller) -->
+    <path d="M3-3 L7-8 5-10 1-6Z" fill="#fff" opacity="0.6"/>
+    <path d="M3 3 L8 7 10 5 6 1Z" fill="#fff" opacity="0.6"/>
+    <path d="M-3 3 L-7 8-5 10-1 6Z" fill="#fff" opacity="0.6"/>
+    <path d="M-3-3 L-8-7-10-5-6-1Z" fill="#fff" opacity="0.6"/>
+    <!-- Crystal shards hanging below -->
+    <line x1="-4" y1="13" x2="-6" y2="22"/>
+    <polygon points="-6,22 -9,18 -3,18" fill="#fff" opacity="0.7"/>
+    <line x1="4" y1="13" x2="7" y2="20"/>
+    <polygon points="7,20 4,17 10,17" fill="#fff" opacity="0.7"/>
   </g>
 </svg>
