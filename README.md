@@ -1,6 +1,6 @@
 # AgendaMagna
 
-Agenda pessoal com painel e conversa no navegador, acessível pelo notebook e pelo celular. Frontend e API ficam no mesmo projeto Next.js na Vercel; os dados ficam no PostgreSQL do Neon. A conversa é processada durante a própria requisição, sem serviços de automação ou processos permanentes. Interface em português, fuso `America/Bahia` e acesso de um único proprietário, com senha, duas etapas opcionais e dispositivos confiáveis.
+Agenda pessoal com painel e conversa no navegador, acessível pelo notebook e pelo celular. A conversa é processada durante a própria requisição, sem serviços de automação ou processos permanentes. Interface em português, fuso `America/Bahia` e acesso de um único proprietário, com senha, duas etapas opcionais e dispositivos confiáveis.
 
 Os provedores de IA, modelos, chaves, prioridades e limites são cadastrados no próprio painel. A aplicação troca de provedor quando o anterior atinge um limite ou fica indisponível. A IA interpreta todas as mensagens da conversa e, se você quiser, reescreve a resposta em linguagem natural numa segunda chamada. Enquanto nenhum provedor estiver cadastrado e ativo, um modo reserva entende apenas algumas frases em formato exato.
 
@@ -46,7 +46,7 @@ Uma explicação sem termos técnicos de tudo o que o aplicativo faz hoje.
 **Anotações**
 
 - Guardar textos soltos, sem prazo nem cobrança: cada um com um título e um espaço para escrever à vontade.
-- Anexar arquivos à anotação (até 5 MB cada, 10 por anotação) e baixá-los depois.
+- Anexar arquivos à anotação (até 3 MB cada, 10 por anotação) e baixá-los depois.
 - Procurar por qualquer palavra do título ou do texto.
 
 **Avisos e uso no celular**
@@ -365,7 +365,7 @@ O financeiro exige conexão. O cadastro manual continua disponível quando a IA 
 
 **Anotações** guarda texto solto: um título, um espaço de até 20.000 caracteres e arquivos anexados. A busca procura no título e no texto, e a lista tem páginas de 20 anotações, da mais recente para a mais antiga.
 
-Cada anexo pode ter até 5 MB e cada anotação aceita até 10 arquivos. Os arquivos ficam no próprio banco, em base64, e são enviados e baixados pelas rotas `notes/file`; a lista de anotações nunca carrega o conteúdo deles. Excluir uma anotação apaga os arquivos junto, e a confirmação avisa. Salvar confere a versão: se a anotação mudou em outro aparelho, o salvamento é recusado em vez de sobrescrever.
+Cada anexo pode ter até 3 MB e cada anotação aceita até 10 arquivos. O limite acompanha o teto de 4,5 MB que a Vercel aplica ao corpo de uma requisição, já contando o crescimento do base64. Os arquivos ficam no próprio banco, em base64, e são enviados e baixados pelas rotas `notes/file`; a lista de anotações nunca carrega o conteúdo deles. Excluir uma anotação apaga os arquivos junto, e a confirmação avisa. Salvar confere a versão: se a anotação mudou em outro aparelho, o salvamento é recusado em vez de sobrescrever.
 
 Anotações exigem conexão e **não entram no arquivo de exportação**. Restaurar um backup não apaga nem devolve anotações — elas ficam intocadas. Para não perdê-las, conte com o backup do PostgreSQL.
 

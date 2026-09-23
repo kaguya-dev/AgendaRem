@@ -1,5 +1,6 @@
 import { before, after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { createDatabase, loadState, type Database } from '../src/backend/db';
 import { emptyState, DomainError, localDate } from '../src/backend/domain';
 import { interpret } from '../src/backend/interpreter';
@@ -1027,4 +1028,60 @@ test('financeiro usa categorias no mesmo pedido, omite tarefas e não aceita con
     },
   );
   assert.equal(deletion[0].confirmed, undefined);
+});
+
+test('conversa financeira recente não esconde tarefas e grupos do pedido seguinte', async () => {
+  await saveProvider(config(), database);
+  const state = emptyState();
+  state.groups.push({
+    id: 'g1',
+    name: 'Estudos',
+    color: 'verde',
+    icon: 'book',
+    order: 0,
+    archivedAt: null,
+    createdAt: new Date().toISOString(),
+  });
+  state.tasks.push({
+    id: 501,
+    title: 'Ler capítulo três',
+    description: '',
+    groupId: 'g1',
+    status: 'pending',
+    priority: 'normal',
+    dueDate: null,
+    dueTime: null,
+    completedAt: null,
+    trashedAt: null,
+    purgeAt: null,
+    trashReason: null,
+    version: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  // Uma mensagem financeira antiga fica na memória de 30 minutos do canal.
+  await database.query(
+    `INSERT INTO agenda_messages(id,external_id,channel,body,reply,status)
+     VALUES($1,$2,'memoria-financeira','gastei 10 reais com uber','Despesa registrada.','done')`,
+    [randomUUID(), `memoria:${randomUUID()}`],
+  );
+  let prompt = '';
+  await interpret(state, 'adicione leite', 'memoria-financeira', new Date(), database, {
+    fetch: async (_url, init) => {
+      prompt = JSON.parse(String(init.body)).messages[0].content;
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({ commands: [{ op: 'create_task', title: 'leite' }] }),
+            },
+          },
+        ],
+      });
+    },
+  });
+  // A guarda do próprio teste: sem a conversa recente no prompt, ele não provaria nada.
+  assert.match(prompt, /gastei 10 reais com uber/);
+  assert.match(prompt, /Estudos/);
+  assert.match(prompt, /Ler capítulo três/);
 });

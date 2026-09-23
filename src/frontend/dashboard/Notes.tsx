@@ -6,7 +6,7 @@ import { api } from './api';
 import { timestamp } from './format';
 import { Dialog } from './Dialog';
 
-const MAX_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_FILE_BYTES = 3 * 1024 * 1024;
 const size = (bytes: number) =>
   bytes >= 1024 * 1024
     ? `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`
@@ -143,6 +143,12 @@ export function Notes({ offline }: { offline: boolean }) {
             setOpen(null);
             void load();
           }}
+          // Anotação nova continua aberta depois de salva, senão não haveria como anexar um
+          // arquivo sem reabrir o que acabou de ser criado.
+          saved={(note, isNew) => {
+            setOpen(isNew ? note : null);
+            void load();
+          }}
           done={() => {
             setOpen(null);
             void load();
@@ -157,11 +163,13 @@ export function Notes({ offline }: { offline: boolean }) {
 function NoteEditor({
   note,
   close,
+  saved,
   done,
   reload,
 }: {
   note?: NoteWithFiles;
   close: () => void;
+  saved: (note: NoteWithFiles, isNew: boolean) => void;
   done: () => void;
   reload: (id: string) => Promise<void>;
 }) {
@@ -183,7 +191,7 @@ function NoteEditor({
     }
   }
   async function upload(file: File) {
-    if (file.size > MAX_FILE_BYTES) throw new Error('Cada arquivo pode ter até 5 MB.');
+    if (file.size > MAX_FILE_BYTES) throw new Error('Cada arquivo pode ter até 3 MB.');
     const buffer = new Uint8Array(await file.arrayBuffer());
     let binary = '';
     for (let i = 0; i < buffer.length; i += 8192)
@@ -219,12 +227,13 @@ function NoteEditor({
         onSubmit={(e) => {
           e.preventDefault();
           void run(async () => {
-            await api('notes', {
+            const result = await api<NoteWithFiles>('notes', {
               ...(note ? { id: note.id, expectedVersion: note.version } : {}),
               title,
               body,
             });
-            done();
+            if (!note) setNotice('Anotação criada. Agora dá para anexar arquivos.');
+            saved(result, !note);
           });
         }}
       >
@@ -288,7 +297,7 @@ function NoteEditor({
                   </div>
                 </div>
               ))}
-              <label htmlFor="note-file">Anexar arquivo (até 5 MB, 10 por anotação)</label>
+              <label htmlFor="note-file">Anexar arquivo (até 3 MB, 10 por anotação)</label>
               <input
                 id="note-file"
                 type="file"

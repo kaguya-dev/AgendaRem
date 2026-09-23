@@ -18,11 +18,8 @@ test('anotação guarda texto, anexa arquivo, encontra pela busca e some ao excl
   await page.getByLabel('Título').fill('Receita de bolo');
   await page.getByLabel('Texto').fill('Farinha, ovos e paciência');
   await page.getByRole('button', { name: 'Salvar anotação' }).click();
-  await expect(page.getByRole('dialog')).not.toBeVisible();
-  const card = page.locator('.note-card').filter({ hasText: 'Receita de bolo' });
-  await expect(card).toBeVisible();
-
-  await card.click();
+  // A anotação nova continua aberta para receber anexos, sem precisar reabrir.
+  await expect(page.getByText('Anotação criada. Agora dá para anexar arquivos.')).toBeVisible();
   await page.getByLabel(/Anexar arquivo/).setInputFiles({
     name: 'lista.txt',
     mimeType: 'text/plain',
@@ -34,6 +31,7 @@ test('anotação guarda texto, anexa arquivo, encontra pela busca e some ao excl
   await attached.getByRole('button', { name: 'Baixar', exact: true }).click();
   expect((await download).suggestedFilename()).toBe('lista.txt');
   await page.getByRole('button', { name: 'Fechar sem salvar', exact: true }).click();
+  const card = page.locator('.note-card').filter({ hasText: 'Receita de bolo' });
   await expect(card).toContainText('1 arquivo(s)');
 
   await page.getByLabel('Buscar nas anotações').fill('paciência');

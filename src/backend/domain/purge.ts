@@ -22,6 +22,12 @@ export function purge(original: State, now = new Date()): { state: State; remove
     }
   }
   if (removed.length) state.settings.revision++;
+  // Linhas de histórico sem tarefa (finanças) não somem com nenhuma tarefa purgada: seguem o
+  // mesmo prazo de retenção, senão crescem para sempre e viajam inteiras em cada atualização.
+  const historyCutoff = new Date(
+    now.getTime() - state.settings.retentionDays * 86400000,
+  ).toISOString();
+  state.history = state.history.filter((h) => h.taskId !== 0 || h.at >= historyCutoff);
   // Undo lasts 24h. Keep only a content-free barrier for each old channel.
   const cutoff = new Date(now.getTime() - 86400000).toISOString();
   state.operations = state.operations.filter(

@@ -2,7 +2,7 @@ import { isFinance } from './finance/rules';
 import { loadFinance } from './finance/store';
 import { panelCommandsSchema } from './domain';
 import { randomUUID } from 'node:crypto';
-import { db, loadState, saveState, lock, type Database, type Sql } from './db';
+import { databaseHint, db, loadState, saveState, lock, type Database, type Sql } from './db';
 import { DomainError, execute, purge, UNSUPPORTED } from './domain';
 import { interpret } from './interpreter';
 import { generateReply, listProviders } from './llm';
@@ -226,10 +226,14 @@ export async function startChat(
         };
       });
     } catch (error) {
+      // Erro do PostgreSQL vira a mesma dica que a API dá nas outras rotas: sem isso, migração
+      // não aplicada e credencial vencida chegavam à conversa como o mesmo "não foi possível".
       const safe =
         error instanceof DomainError
           ? error.message
-          : 'Não foi possível processar o pedido. Nenhuma alteração foi confirmada.';
+          : (error as { code?: unknown })?.code
+            ? `Não foi possível processar o pedido. Nenhuma alteração foi confirmada. ${databaseHint(error)}`
+            : 'Não foi possível processar o pedido. Nenhuma alteração foi confirmada.';
       await connection.query(
         `UPDATE agenda_messages SET status='failed',error=$3,lease_token=NULL,lease_until=NULL,updated_at=now()
        WHERE id=$1 AND status='processing' AND lease_token=$2`,

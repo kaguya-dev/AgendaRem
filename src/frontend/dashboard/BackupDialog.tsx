@@ -16,7 +16,7 @@ export function BackupDialog({
     version: number;
     tasks: unknown[];
     groups: unknown[];
-    finance?: { categories: unknown[]; entries: unknown[] };
+    finance?: { categories: unknown[]; entries: unknown[]; templates?: unknown[] };
   } | null>(null);
   const [previewRevision, setPreviewRevision] = useState(data.settings.revision);
   const [password, setPassword] = useState('');
@@ -119,8 +119,12 @@ export function BackupDialog({
             </p>
             <p>
               {backup.version === 2
-                ? `Todos os lançamentos e categorias financeiros atuais serão substituídos por ${backup.finance!.entries.length} lançamentos e ${backup.finance!.categories.length} categorias do arquivo.`
+                ? `Todos os lançamentos, categorias e modelos financeiros atuais serão substituídos por ${backup.finance!.entries.length} lançamentos, ${backup.finance!.categories.length} categorias e ${backup.finance!.templates?.length ?? 0} modelos do arquivo.`
                 : 'Este arquivo é versão 1: o financeiro atual será preservado.'}
+            </p>
+            <p>
+              Anotações e seus arquivos não entram no backup: a restauração não os apaga nem os
+              devolve.
             </p>
             <p>Baixe uma cópia da agenda atual antes de continuar.</p>
             <label htmlFor="backup-password">Senha atual</label>

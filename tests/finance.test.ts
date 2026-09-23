@@ -336,3 +336,90 @@ test('categoria pedida na conversa sem tipo vira categoria de despesa', async ()
   const month = await financeSnapshot({ month: '2026-12' }, db);
   assert.equal(month.byCategory.find((c) => c.id === created.id)?.expense, 8000);
 });
+test('tabela financeira ausente vira aviso de migração na conversa, não “não foi possível”', async () => {
+  const fresh = await createDatabase();
+  await fresh.query('DROP TABLE agenda_finance_templates');
+  const result = await chat(
+    'Gastei 2,50 no RU',
+    randomUUID(),
+    fresh,
+    async () => [
+      {
+        op: 'finance_create',
+        kind: 'expense',
+        amount: '2,50',
+        description: 'RU',
+        category: 'Alimentação',
+      },
+    ],
+    async () => null,
+  );
+  assert.equal(result.status, 'failed');
+  assert.match(result.error!, /db:migrate/);
+  await fresh.close();
+});
+test('operação de categoria sem referência não atinge a “Sem categoria” por engano', async () => {
+  const fresh = await createDatabase();
+  await assert.rejects(
+    panelAction([{ op: 'finance_archive_category' }], randomUUID(), fresh),
+    /Informe qual categoria/,
+  );
+  const semCategoria = (await loadFinance(fresh)).categories.find(
+    (c) => c.name === 'Sem categoria',
+  )!;
+  assert.equal(semCategoria.archivedAt, null);
+  const restored = await panelAction(
+    [
+      { op: 'finance_archive_category', category: semCategoria.id, expectedVersion: 1 },
+      { op: 'finance_restore_category', category: semCategoria.id, expectedVersion: 2 },
+    ],
+    randomUUID(),
+    fresh,
+  );
+  assert.match(restored.reply!, /reativada/);
+  await fresh.close();
+});
+test('filtrar só por “De”, fora do mês escolhido, não esvazia a tela', async () => {
+  const fresh = await createDatabase();
+  await panelAction(
+    [
+      {
+        op: 'finance_create',
+        kind: 'expense',
+        amount: '10',
+        description: 'Fora do mês',
+        category: 'Transporte',
+        date: '2027-11-20',
+      },
+    ],
+    randomUUID(),
+    fresh,
+  );
+  const data = await financeSnapshot({ month: '2027-09', fromDate: '2027-11-01' }, fresh);
+  assert.equal(data.totals.expense, 1000);
+  assert.equal(data.total, 1);
+  await assert.rejects(
+    financeSnapshot({ month: '2027-09', fromDate: '2027-11-01', toDate: '2027-10-01' }, fresh),
+    /antes do fim/,
+  );
+  await fresh.close();
+});
+test('resposta longa demais a uma pergunta de valor explica o que fazer', async () => {
+  const state = await loadState(db, true);
+  const asked = execute(
+    state,
+    [{ op: 'finance_create', kind: 'expense', description: 'Mercado' }],
+    'web',
+  );
+  assert.equal(asked.clarification, true);
+  assert.throws(
+    () =>
+      pendingAnswer(
+        asked.state,
+        'foi algo perto de quarenta e dois reais e noventa centavos hoje',
+        'web',
+        new Date(),
+      ),
+    /só com o valor/,
+  );
+});

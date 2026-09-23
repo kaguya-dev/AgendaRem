@@ -560,6 +560,12 @@ export function pendingAnswer(
     return [{ op: 'create_group', name: p.createGroup }, ...commands];
   }
   if (['amount', 'description', 'kind'].includes(p.field) && !p.options.length) {
+    // O schema recusa acima de 40 caracteres em amount; sem esta checagem a resposta comprida
+    // estourava como erro de validação e chegava como “não foi possível processar o pedido”.
+    if (p.field === 'amount' && text.trim().length > 40)
+      throw new DomainError('Responda só com o valor, como 42,90.');
+    if (p.field === 'description' && text.trim().length > 5000)
+      throw new DomainError('A descrição precisa ter até 5.000 caracteres.');
     const value =
       p.field === 'kind'
         ? ({ receita: 'income', despesa: 'expense' } as const)[

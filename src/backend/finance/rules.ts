@@ -189,6 +189,9 @@ export function financeCommand(
       c.op,
     )
   ) {
+    // Sem `category`, a busca cairia no apelido padrão “sem categoria” e arquivaria justamente
+    // a categoria que segura os lançamentos sem classificação.
+    if (!c.category) throw new DomainError('Informe qual categoria deseja alterar.');
     const item = category(c.category);
     checkVersion(item.version);
     if (c.op === 'finance_update_category') {
@@ -208,7 +211,7 @@ export function financeCommand(
     } else item.archivedAt = c.op === 'finance_archive_category' ? at : null;
     item.version++;
     item.updatedAt = at;
-    reply = `Categoria ${item.name} ${item.archivedAt ? 'arquivada' : 'atualizada'}.`;
+    reply = `Categoria ${item.name} ${item.archivedAt ? 'arquivada' : c.op === 'finance_restore_category' ? 'reativada' : 'atualizada'}.`;
   } else if (c.op === 'finance_create') {
     const kind = required(c.kind, 'kind');
     const amountCents = parseMoney(required(c.amount, 'amount'));

@@ -99,10 +99,15 @@ async function handler(request: Request, context: { params: Promise<{ path: stri
       await revokeSession(current.id);
       return reply({ ok: true }, 200, { 'Set-Cookie': cookie('', 0) });
     }
-    // Anexo de anotação chega em base64 no corpo JSON: 5 MB de arquivo cabem em pouco menos de
-    // 7 MB de texto, e o restante das rotas continua com o limite pequeno de sempre.
+    // Anexo de anotação chega em base64 no corpo JSON: 3 MB de arquivo dão pouco mais de 4 MB
+    // de texto, dentro do teto de 4,5 MB que a Vercel aplica ao corpo da requisição. O restante
+    // das rotas continua com o limite pequeno de sempre.
     const limit =
-      path === 'notes/file' ? 7 * 1024 * 1024 : path === 'backup/import' ? 2 * 1024 * 1024 : 65536;
+      path === 'notes/file'
+        ? 4 * 1024 * 1024 + 256 * 1024
+        : path === 'backup/import'
+          ? 2 * 1024 * 1024
+          : 65536;
     const body = JSON.parse(await read(request, limit));
     if (path === 'security') return reply(await updateAccess(current, body));
     if (path === 'backup/import') {

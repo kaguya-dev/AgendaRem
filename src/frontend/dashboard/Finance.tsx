@@ -760,7 +760,7 @@ function EntryEditor({
             {categories
               .filter(
                 (c) =>
-                  (!c.archivedAt || c.id === entry?.categoryId) &&
+                  (!c.archivedAt || c.id === entry?.categoryId || c.id === prefill?.category) &&
                   (c.kind === kind || c.kind === 'both'),
               )
               .map((c) => (

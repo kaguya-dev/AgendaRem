@@ -62,7 +62,7 @@ test('anexos entram e saem inteiros, respeitam limites e somem junto com a anota
   assert.equal((await readNote({ note: note.id }, db)).files.length, 1);
   assert.equal((await listNotes({ search: 'Documentos' }, db)).notes[0].fileCount, 1);
 
-  await assert.rejects(attach(note.id, 'grande.bin', Buffer.alloc(MAX_FILE_BYTES + 1)), /5 MB/);
+  await assert.rejects(attach(note.id, 'grande.bin', Buffer.alloc(MAX_FILE_BYTES + 1)), /3 MB/);
   await assert.rejects(attach(randomUUID(), 'orfao.txt', content), /não encontrada/);
   await assert.rejects(
     addNoteFile({ note: note.id, name: 'x', type: 'texto', content: 'AAA' }, db),

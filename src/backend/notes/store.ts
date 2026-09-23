@@ -55,8 +55,10 @@ async function files(sql: Sql, noteId: string) {
 export async function listNotes(input: unknown, connection?: Database): Promise<NotesPage> {
   const q = listSchema.parse(input);
   const database = connection ?? (await db());
-  const search = q.search ? `%${q.search}%` : null;
-  const where = `($1::text IS NULL OR data->>'title' ILIKE $1 OR data->>'body' ILIKE $1)`;
+  // % e _ são curingas do LIKE: sem escapar, buscar "%" devolvia todas as anotações e "100%"
+  // casava com qualquer coisa depois do 100.
+  const search = q.search ? `%${q.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
+  const where = `($1::text IS NULL OR data->>'title' ILIKE $1 ESCAPE '\\' OR data->>'body' ILIKE $1 ESCAPE '\\')`;
   const rows = (
     await database.query<{ data: Note; files: string }>(
       `SELECT n.data, (SELECT count(*) FROM agenda_note_files f WHERE f.note_id=n.id) AS files
@@ -151,7 +153,7 @@ export async function addNoteFile(input: unknown, connection?: Database): Promis
   const value = uploadSchema.parse(input);
   const content = Buffer.from(value.content, 'base64');
   if (!content.length) throw new DomainError('Arquivo vazio.');
-  if (content.length > MAX_FILE_BYTES) throw new DomainError('Cada arquivo pode ter até 5 MB.');
+  if (content.length > MAX_FILE_BYTES) throw new DomainError('Cada arquivo pode ter até 3 MB.');
   const database = connection ?? (await db());
   return database.transaction(async (tx) => {
     await lock(tx);

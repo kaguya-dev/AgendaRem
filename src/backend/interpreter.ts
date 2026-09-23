@@ -250,7 +250,10 @@ export async function interpret(
   const financial =
     financeWords.test(normalize(text)) || turns.some((t) => financeWords.test(normalize(t.voce)));
   const taskWords = /\b(tarefa|tarefas|grupo|grupos|prazo|finalizei|anota|anote|conclua|conclui)\b/;
-  const financeOnly = financial && !taskWords.test(normalize(text));
+  // O contexto financeiro pode vir de uma conversa recente, mas esconder tarefas e grupos só
+  // se a mensagem atual for financeira: senão “adicione leite” logo depois de “gastei 10 no
+  // uber” chegava ao modelo sem nenhuma tarefa e sem nenhum grupo.
+  const financeOnly = financeWords.test(normalize(text)) && !taskWords.test(normalize(text));
   const finance = financial ? await financeContext(database) : undefined;
   const terms = normalize(text)
     .split(/\W+/)

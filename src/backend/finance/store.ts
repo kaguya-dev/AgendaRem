@@ -59,11 +59,13 @@ const querySchema = z
 export async function financeSnapshot(input: unknown, connection?: Database): Promise<FinanceData> {
   const q = querySchema.parse(input);
   const start = q.fromDate ?? `${q.month}-01`;
-  const end =
-    q.toDate ??
-    new Date(Date.UTC(Number(q.month.slice(0, 4)), Number(q.month.slice(5)), 0, 12))
+  const lastDay = (reference: string) =>
+    new Date(Date.UTC(Number(reference.slice(0, 4)), Number(reference.slice(5, 7)), 0, 12))
       .toISOString()
       .slice(0, 10);
+  // Preencher só “De”, com um dia fora do mês escolhido, deixava o início depois do fim e a
+  // tela inteira vazia. Sem “Até”, o período termina no fim do mês de quem começa.
+  const end = q.toDate ?? lastDay(q.fromDate ?? q.month);
   if (start > end) throw new DomainError('O início do período deve vir antes do fim.');
   const previousStart = new Date(`${start}T12:00:00Z`);
   previousStart.setUTCDate(1);

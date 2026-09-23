@@ -10,6 +10,8 @@ Pedidos feitos depois do plano original e já implementados: destaque de urgênc
 
 Em aberto nessa rodada: **notificação com o app fechado**. Hoje o lembrete só dispara com a tela aberta. As opções levantadas foram Web Push (chaves VAPID, inscrição por aparelho e um agendador de minuto em minuto — o cron da Vercel roda uma vez por dia e teria de mudar; no iPhone exige o app na tela de início), melhorar o lembrete local (avisar atrasados ao abrir, adiar, concluir pela notificação) ou enviar por fora, via Telegram. A escolha ainda não foi feita.
 
+Para o app publicado: o `master` ainda não tem nada disso. Antes de publicar, aplique `npm run db:migrate` com a conexão administrativa e o GRANT do `README.md` — sem as tabelas novas, qualquer pedido financeiro pela conversa falha.
+
 Também em aberto: anotações e seus arquivos não entram no arquivo de exportação. Incluí-las exige uma versão 3 do backup e um limite de tamanho maior que os 2 MB atuais.
 
 ## Ideias que este plano atende
@@ -181,7 +183,7 @@ Exemplos de comportamento esperado:
 - [x] Financeiro: testar centavos, valores inválidos, datas, filtros, somas, categorias arquivadas, exclusão/restauração, duplicação e edição concorrente.
 - [x] IA: simular respostas válidas/inválidas, categorias inexistentes, pedido incompleto, pedido misto e troca de provedor após HTTP 429, sem gastar cota nos testes automatizados.
 - [x] Backup: testar importação das versões 1 e 2, preservação do financeiro ao importar versão 1 e reversão completa da transação quando o arquivo for inválido.
-- [ ] Validar migrações e permissões em bancos de teste local e PostgreSQL antes de aplicar em produção.
+- [x] Validar migrações e permissões em bancos de teste local e PostgreSQL antes de aplicar em produção. Conferido em PostgreSQL 17 em contêiner: 17 tabelas aplicadas, migração repetida sem duplicar as categorias iniciais, papel `agenda_runtime` lendo e escrevendo nas tabelas novas e `deploy:check` aprovando o banco pela conexão restrita. Falta repetir no banco de homologação do Neon.
 - [x] Atualizar `README.md` a cada funcionalidade entregue, incluindo uso, limitações reais e migração quando necessária.
 
 Primeira entrega recomendada: concluir a etapa 1, adicionar o ditado da etapa 2 e a fila de mensagens da etapa 3, que podem ser entregues separadamente. A segunda entrega reúne financeiro manual e dashboards; a terceira integra a IA ao financeiro.
