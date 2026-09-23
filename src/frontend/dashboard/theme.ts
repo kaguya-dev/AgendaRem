@@ -1,10 +1,13 @@
 export type Theme = 'light' | 'dark' | 'system';
+export type ThemeMode = Theme;
+export type Character = 'rem' | 'ram';
 
 export const THEME_KEY = 'agenda:theme';
+export const CHARACTER_KEY = 'agenda:character';
 
 // Roda antes da primeira pintura, direto no <head>: sem isso a tela pisca clara antes do React
 // montar. Mantido em string porque precisa ser inline no HTML servido.
-export const THEME_SCRIPT = `try{var t=localStorage.getItem('${THEME_KEY}');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch(e){}`;
+export const THEME_SCRIPT = `try{var c=localStorage.getItem('${CHARACTER_KEY}');if(c==='ram'||c==='rem')document.documentElement.dataset.character=c;var t=localStorage.getItem('${THEME_KEY}');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch(e){}`;
 
 export function readTheme(): Theme {
   try {
@@ -15,6 +18,16 @@ export function readTheme(): Theme {
     return 'system';
   }
 }
+
+export function readCharacter(): Character {
+  try {
+    const saved = localStorage.getItem(CHARACTER_KEY);
+    return saved === 'ram' ? 'ram' : 'rem';
+  } catch {
+    return 'rem';
+  }
+}
+
 export function applyTheme(theme: Theme) {
   const root = document.documentElement;
   if (theme === 'system') delete root.dataset.theme;
@@ -22,6 +35,16 @@ export function applyTheme(theme: Theme) {
   try {
     if (theme === 'system') localStorage.removeItem(THEME_KEY);
     else localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    // A escolha vale para esta sessão mesmo sem conseguir guardar.
+  }
+}
+
+export function applyCharacter(character: Character) {
+  const root = document.documentElement;
+  root.dataset.character = character;
+  try {
+    localStorage.setItem(CHARACTER_KEY, character);
   } catch {
     // A escolha vale para esta sessão mesmo sem conseguir guardar.
   }

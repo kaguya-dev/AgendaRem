@@ -39,22 +39,34 @@ export function isPublicAddress(address: string): boolean {
     ? !blocked.check(address, 'ipv4')
     : family === 6 && globalV6.check(address, 'ipv6') && !blocked.check(address, 'ipv6');
 }
-export function validateApiUrl(value: string): URL {
+export function isLocalAddress(address: string): boolean {
+  if (address === 'localhost' || address === '127.0.0.1' || address === '::1') return true;
+  const family = isIP(address);
+  return family !== 0 && !isPublicAddress(address);
+}
+
+export function validateApiUrl(value: string, allowLocal = false): URL {
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    throw new DomainError('Informe uma URL HTTPS válida para a API.', 400);
+    throw new DomainError('Informe uma URL válida para a API.', 400);
   }
   const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (url.username || url.password || url.search || url.hash || !host) {
+    throw new DomainError('A URL da API não deve conter credenciais, parâmetros de busca ou âncoras.', 400);
+  }
+
+  if (allowLocal) {
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      throw new DomainError('Informe uma URL HTTP ou HTTPS válida.', 400);
+    }
+    return url;
+  }
+
   if (
     url.protocol !== 'https:' ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash ||
     (url.port && url.port !== '443') ||
-    !host ||
     (isIP(host)
       ? !isPublicAddress(host)
       : !host.includes('.') ||
@@ -71,9 +83,27 @@ export function validateApiUrl(value: string): URL {
 
 // DNS is checked inside the socket lookup and its validated address is pinned to that
 // connection. Redirects are never followed; a second DNS lookup cannot rebind the host.
-export const secureFetch = (url: string, init: RequestInit): Promise<Response> =>
-  new Promise((resolve, reject) => {
-    validateApiUrl(url);
+export const secureFetch = async (
+  url: string,
+  init: RequestInit,
+  allowLocal = false,
+): Promise<Response> => {
+  const parsed = validateApiUrl(url, allowLocal);
+  const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  const isLocal =
+    parsed.protocol === 'http:' ||
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    isLocalAddress(host);
+
+  if (allowLocal && isLocal) {
+    return fetch(url, {
+      ...init,
+      redirect: 'error',
+    });
+  }
+
+  return new Promise((resolve, reject) => {
     const req = request(
       url,
       {
@@ -120,3 +150,4 @@ export const secureFetch = (url: string, init: RequestInit): Promise<Response> =
     req.on('error', reject);
     req.end(init.body);
   });
+};

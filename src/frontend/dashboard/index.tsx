@@ -247,12 +247,12 @@ export default function Dashboard() {
               ? await navigator.serviceWorker.getRegistration()
               : undefined;
           if (registration)
-            await registration.showNotification('AgendaMagna · Lembrete', {
+            await registration.showNotification('AgendaRem · Lembrete', {
               body: task.title,
               icon: '/icon.svg',
               tag: key,
             });
-          else new Notification('AgendaMagna · Lembrete', { body: task.title, tag: key });
+          else new Notification('AgendaRem · Lembrete', { body: task.title, tag: key });
           localStorage.setItem(key, 'sent');
         } catch {
           /* Permission may have changed while the page was open. */

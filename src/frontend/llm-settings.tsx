@@ -16,7 +16,7 @@ import type { PublicLlmProvider } from '@/backend/llm-types';
 type ProviderForm = {
   id?: string;
   name: string;
-  kind: 'gemini' | 'compatible';
+  kind: 'gemini' | 'compatible' | 'local';
   model: string;
   apiUrl: string;
   apiKey: string;
@@ -233,7 +233,11 @@ export default function LlmSettings({ onChange }: { onChange: () => Promise<void
                       <span className="llm-order">Prioridade {provider.priority}</span>
                       <h3>{provider.name}</h3>
                       <p>
-                        {provider.kind === 'gemini' ? 'Gemini' : 'API compatível'} ·{' '}
+                        {provider.kind === 'gemini'
+                          ? 'Gemini'
+                          : provider.kind === 'local'
+                            ? 'Modelo Local'
+                            : 'API compatível'} ·{' '}
                         {provider.model}
                       </p>
                     </div>
@@ -392,10 +396,17 @@ export default function LlmSettings({ onChange }: { onChange: () => Promise<void
                 <select
                   id="llm-kind"
                   value={form.kind}
-                  onChange={(e) => update('kind', e.target.value as ProviderForm['kind'])}
+                  onChange={(e) => {
+                    const newKind = e.target.value as ProviderForm['kind'];
+                    update('kind', newKind);
+                    if (newKind === 'local' && !form.apiUrl) {
+                      update('apiUrl', 'http://127.0.0.1:11434/v1/chat/completions');
+                    }
+                  }}
                 >
-                  <option value="gemini">Gemini</option>
-                  <option value="compatible">Compatível com Chat Completions</option>
+                  <option value="gemini">Gemini (Google)</option>
+                  <option value="compatible">Compatível com Chat Completions (OpenAI, Groq, etc.)</option>
+                  <option value="local">Modelo Local (Ollama, LM Studio, vLLM, LocalAI)</option>
                 </select>
               </div>
               <div>
@@ -412,12 +423,59 @@ export default function LlmSettings({ onChange }: { onChange: () => Promise<void
                 />
               </div>
             </div>
+            {form.kind === 'local' && (
+              <div style={{ margin: '8px 0 12px' }}>
+                <span style={{ fontSize: '12px', display: 'block', marginBottom: '6px', opacity: 0.85 }}>
+                  Preenchimento rápido:
+                </span>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="button secondary"
+                    style={{ fontSize: '11px', padding: '4px 10px' }}
+                    onClick={() => {
+                      update('apiUrl', 'http://127.0.0.1:11434/v1/chat/completions');
+                      if (!form.model) update('model', 'llama3');
+                      if (!form.name) update('name', 'Ollama Local');
+                    }}
+                  >
+                    🦙 Ollama (11434)
+                  </button>
+                  <button
+                    type="button"
+                    className="button secondary"
+                    style={{ fontSize: '11px', padding: '4px 10px' }}
+                    onClick={() => {
+                      update('apiUrl', 'http://127.0.0.1:1234/v1/chat/completions');
+                      if (!form.name) update('name', 'LM Studio');
+                    }}
+                  >
+                    🤖 LM Studio (1234)
+                  </button>
+                  <button
+                    type="button"
+                    className="button secondary"
+                    style={{ fontSize: '11px', padding: '4px 10px' }}
+                    onClick={() => {
+                      update('apiUrl', 'http://127.0.0.1:8000/v1/chat/completions');
+                      if (!form.name) update('name', 'LocalAI / vLLM');
+                    }}
+                  >
+                    ⚡ LocalAI / vLLM (8000)
+                  </button>
+                </div>
+              </div>
+            )}
             <label htmlFor="llm-model">Identificador do modelo</label>
             <input
               id="llm-model"
               required
               maxLength={160}
-              placeholder="Copie o nome exato informado pela API"
+              placeholder={
+                form.kind === 'local'
+                  ? 'Ex.: llama3, mistral, qwen2.5, phi3'
+                  : 'Copie o nome exato informado pela API'
+              }
               value={form.model}
               onChange={(e) => update('model', e.target.value)}
               autoCapitalize="none"
@@ -452,24 +510,56 @@ export default function LlmSettings({ onChange }: { onChange: () => Promise<void
                 </p>
               </>
             )}
+            {form.kind === 'local' && (
+              <>
+                <label htmlFor="llm-url">Endereço completo da API Local (HTTP ou HTTPS)</label>
+                <input
+                  id="llm-url"
+                  type="url"
+                  required
+                  maxLength={2048}
+                  placeholder="http://127.0.0.1:11434/v1/chat/completions"
+                  value={form.apiUrl}
+                  onChange={(e) => update('apiUrl', e.target.value)}
+                  autoCapitalize="none"
+                  spellCheck={false}
+                />
+                <p className="field-help">
+                  Informe o endereço completo do endpoint de Chat Completions do seu servidor local
+                  (como Ollama, LM Studio, Jan, LocalAI ou vLLM). Por exemplo:
+                  http://127.0.0.1:11434/v1/chat/completions para Ollama.
+                </p>
+              </>
+            )}
             <label htmlFor="llm-key">
-              Chave da API {form.id && <span>· deixe em branco para manter</span>}
+              Chave da API{' '}
+              {form.kind === 'local' ? (
+                <span>(opcional para modelos locais)</span>
+              ) : form.id ? (
+                <span>· deixe em branco para manter</span>
+              ) : null}
             </label>
             <input
               id="llm-key"
               type="password"
-              required={!form.id}
+              required={!form.id && form.kind !== 'local'}
               autoComplete="new-password"
               maxLength={4096}
               placeholder={
-                form.id ? 'Chave já salva; preencha apenas para trocar' : 'Cole sua chave secreta'
+                form.kind === 'local'
+                  ? 'Não obrigatório (preencha somente se o servidor local exigir)'
+                  : form.id
+                    ? 'Chave já salva; preencha apenas para trocar'
+                    : 'Cole sua chave secreta'
               }
               value={form.apiKey}
               onChange={(e) => update('apiKey', e.target.value)}
               spellCheck={false}
             />
             <p className="field-help">
-              A chave é usada pelo servidor e não é exibida novamente após salvar.
+              {form.kind === 'local'
+                ? 'A maioria dos servidores locais não exige autenticação.'
+                : 'A chave é usada pelo servidor e não é exibida novamente após salvar.'}
             </p>
             <div className="form-grid">
               <div>

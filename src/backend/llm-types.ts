@@ -1,4 +1,4 @@
-export type LlmProviderKind = 'gemini' | 'compatible';
+export type LlmProviderKind = 'gemini' | 'compatible' | 'local';
 
 export interface PublicLlmProvider {
   id: string;

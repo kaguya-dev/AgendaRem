@@ -12,7 +12,7 @@ const configurationSchema = z
   .object({
     id: z.string().uuid().optional(),
     name: z.string().trim().min(1).max(80),
-    kind: z.enum(['gemini', 'compatible']),
+    kind: z.enum(['gemini', 'compatible', 'local']),
     model: z
       .string()
       .trim()
@@ -92,7 +92,10 @@ export async function saveProvider(input: unknown, database?: Database) {
       400,
     );
   const { id: suppliedId, apiKey, ...config } = parsed.data;
-  config.apiUrl = config.kind === 'gemini' ? GEMINI_URL : validateApiUrl(config.apiUrl).toString();
+  config.apiUrl =
+    config.kind === 'gemini'
+      ? GEMINI_URL
+      : validateApiUrl(config.apiUrl, config.kind === 'local').toString();
   const id = suppliedId ?? randomUUID();
   database ??= await db();
   await database.transaction(async (tx) => {
@@ -102,7 +105,7 @@ export async function saveProvider(input: unknown, database?: Database) {
       await tx.query<ProviderRow>('SELECT * FROM agenda_llm_providers WHERE id=$1 FOR UPDATE', [id])
     ).rows[0];
     if (suppliedId && !existing) throw new DomainError('Provedor de IA não encontrado.', 404);
-    if (!existing && !apiKey)
+    if (!existing && !apiKey && config.kind !== 'local')
       throw new DomainError('Informe a chave da API para cadastrar a IA.', 400);
     if (
       !existing &&
@@ -112,7 +115,7 @@ export async function saveProvider(input: unknown, database?: Database) {
       ) >= 20
     )
       throw new DomainError('Cadastre no máximo 20 provedores de IA.', 400);
-    const encrypted = apiKey ? encryptKey(apiKey, id) : existing.encrypted_key;
+    const encrypted = apiKey ? encryptKey(apiKey, id) : (existing?.encrypted_key ?? '');
     await tx.query(
       `INSERT INTO agenda_llm_providers (id,config,encrypted_key) VALUES ($1,$2::jsonb,$3)
       ON CONFLICT(id) DO UPDATE SET config=excluded.config,encrypted_key=excluded.encrypted_key,

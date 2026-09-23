@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Check, MessageCircle, Monitor, Moon, Sparkles, Sun, Trash2 } from 'lucide-react';
 import { offlineEnabled, remember, clearOffline, registerWorker } from './offline';
 import { Dialog } from './Dialog';
-import { applyTheme, readTheme, type Theme } from './theme';
+import { applyCharacter, applyTheme, readCharacter, readTheme, type Character, type Theme } from './theme';
 import type { Action, Data } from './types';
 
 export function SettingsDialog({
@@ -35,10 +35,18 @@ export function SettingsDialog({
   const [natural, setNatural] = useState(data?.settings.naturalReply !== false);
   // 'system' até o primeiro render no cliente: no servidor não dá para ler a escolha guardada.
   const [theme, setTheme] = useState<Theme>('system');
-  useEffect(() => setTheme(readTheme()), []);
+  const [character, setCharacter] = useState<Character>('rem');
+  useEffect(() => {
+    setTheme(readTheme());
+    setCharacter(readCharacter());
+  }, []);
   function chooseTheme(next: Theme) {
     setTheme(next);
     applyTheme(next);
+  }
+  function chooseCharacter(next: Character) {
+    setCharacter(next);
+    applyCharacter(next);
   }
   return (
     <Dialog title="Do seu jeito" subtitle="Ajustes simples para sua organização." close={close}>
@@ -53,18 +61,43 @@ export function SettingsDialog({
         }}
       >
         <div className="setting-title">
-          <Sun size={20} />
-          <h3>Aparência</h3>
+          <Sparkles size={20} />
+          <h3>Tema (Re:Zero)</h3>
         </div>
         <p className="settings-copy">
-          Vale neste aparelho. “Seguir o sistema” acompanha o modo claro ou escuro do seu computador
-          ou celular.
+          Escolha a paleta de cores: Rem (Azul Celeste) ou Ram (Rosa Floral).
         </p>
-        <div className="theme-choice" role="group" aria-label="Tema">
+        <div className="theme-choice" role="group" aria-label="Personagem">
+          <button
+            type="button"
+            className={character === 'rem' ? 'selected' : ''}
+            aria-pressed={character === 'rem'}
+            onClick={() => chooseCharacter('rem')}
+          >
+            💙 Rem (Azul)
+          </button>
+          <button
+            type="button"
+            className={character === 'ram' ? 'selected' : ''}
+            aria-pressed={character === 'ram'}
+            onClick={() => chooseCharacter('ram')}
+          >
+            🩷 Ram (Rosa)
+          </button>
+        </div>
+
+        <div className="setting-title" style={{ marginTop: 16 }}>
+          <Sun size={20} />
+          <h3>Modo de exibição</h3>
+        </div>
+        <p className="settings-copy">
+          Cada tema conta com modos Claro (White) e Escuro (Black). “Seguir o sistema” acompanha seu aparelho.
+        </p>
+        <div className="theme-choice" role="group" aria-label="Modo">
           {(
             [
-              ['light', 'Claro', <Sun key="l" size={16} />],
-              ['dark', 'Escuro', <Moon key="d" size={16} />],
+              ['light', 'Claro (White)', <Sun key="l" size={16} />],
+              ['dark', 'Escuro (Black)', <Moon key="d" size={16} />],
               ['system', 'Seguir o sistema', <Monitor key="s" size={16} />],
             ] as const
           ).map(([value, label, icon]) => (

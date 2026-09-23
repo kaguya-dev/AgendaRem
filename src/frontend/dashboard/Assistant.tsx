@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowRight, ListTodo, LoaderCircle, MessageCircle, Send, Trash2, Mic } from 'lucide-react';
+import { ArrowRight, ListTodo, LoaderCircle, MessageCircle, Send, Sparkles, Trash2, Mic } from 'lucide-react';
 import { useChatQueue } from './useChatQueue';
 import { useDictation } from './useDictation';
 import { AssistantReply } from './AssistantReply';
@@ -99,8 +99,8 @@ export function Assistant({
             {m.reply ? (
               <div className="bubble assistant">
                 <span className="assistant-name">
-                  <ListTodo size={14} />
-                  AgendaMagna
+                  <Sparkles size={14} />
+                  AgendaRem
                 </span>
                 <AssistantReply text={m.reply} />
               </div>

@@ -149,7 +149,7 @@ export function SecurityDialog({ close }: { close: () => void }) {
               <label htmlFor="totp-secret">Chave de configuração</label>
               <input id="totp-secret" readOnly value={setup.secret} />
               <p className="field-help">
-                Nome: AgendaMagna. Digite o código de 6 dígitos no campo acima para ativar. Esta
+                Nome: AgendaRem. Digite o código de 6 dígitos no campo acima para ativar. Esta
                 configuração expira em 10 minutos.
               </p>
               <button
@@ -189,7 +189,7 @@ export function SecurityDialog({ close }: { close: () => void }) {
                   );
                   const link = document.createElement('a');
                   link.href = url;
-                  link.download = 'agendamagna-recuperacao.txt';
+                  link.download = 'agendarem-recuperacao.txt';
                   link.click();
                   setTimeout(() => URL.revokeObjectURL(url), 1000);
                 }}

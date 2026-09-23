@@ -84,7 +84,7 @@ async function runModel<T>(
   // campo; o prompt já exige JSON e o leitor já aceita texto em volta do objeto. A segunda
   // tentativa só entra em cena se a primeira for recusada com HTTP 400.
   const plan = candidates.flatMap((candidate) =>
-    task.json && candidate.kind === 'compatible'
+    task.json && (candidate.kind === 'compatible' || candidate.kind === 'local')
       ? [
           { ...candidate, json: true, onlyAfterJsonRejection: false },
           { ...candidate, json: false, onlyAfterJsonRejection: true },
@@ -150,14 +150,17 @@ async function runModel<T>(
                 { role: 'user', content: text },
               ],
             };
-      response = await (options.fetch ?? secureFetch)(url, {
+      const isLocal = config.kind === 'local';
+      response = await (options.fetch ?? ((u, i) => secureFetch(u, i, isLocal)))(url, {
         method: 'POST',
         redirect: 'error',
         headers: {
           'Content-Type': 'application/json',
           ...(config.kind === 'gemini'
             ? { 'x-goog-api-key': apiKey }
-            : { Authorization: `Bearer ${apiKey}` }),
+            : apiKey
+              ? { Authorization: `Bearer ${apiKey}` }
+              : {}),
         },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(Math.max(1, Math.min(45000, deadline - Date.now()))),
@@ -241,7 +244,11 @@ async function runModel<T>(
       // Recusa de formato: a mesma API ganha uma tentativa sem `response_format`, e por isso
       // esta primeira não pausa o provedor nem entra na lista de falhas — ela ainda pode dar
       // certo daqui a um instante.
-      if (status === 400 && candidate.json && candidate.kind === 'compatible') {
+      if (
+        status === 400 &&
+        candidate.json &&
+        (candidate.kind === 'compatible' || candidate.kind === 'local')
+      ) {
         jsonRejected.add(candidate.id);
         continue;
       }

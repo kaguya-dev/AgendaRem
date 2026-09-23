@@ -1,4 +1,4 @@
-# AgendaMagna
+# AgendaRem
 
 Agenda pessoal com painel e conversa no navegador, acessível pelo notebook e pelo celular. A conversa é processada durante a própria requisição, sem serviços de automação ou processos permanentes. Interface em português, fuso `America/Bahia` e acesso de um único proprietário, com senha, duas etapas opcionais e dispositivos confiáveis.
 

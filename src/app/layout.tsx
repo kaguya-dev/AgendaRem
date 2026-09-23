@@ -3,12 +3,12 @@ import { THEME_SCRIPT } from '@/frontend/dashboard/theme';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'AgendaMagna · Seu dia, com clareza',
+  title: 'AgendaRem · Seu dia, com clareza',
   description: 'Suas tarefas e seu assistente, no notebook e no celular.',
-  applicationName: 'AgendaMagna',
+  applicationName: 'AgendaRem',
   manifest: '/manifest.webmanifest',
   icons: { icon: '/icon.svg' },
-  appleWebApp: { capable: true, title: 'AgendaMagna', statusBarStyle: 'default' },
+  appleWebApp: { capable: true, title: 'AgendaRem', statusBarStyle: 'default' },
   robots: { index: false, follow: false },
 };
 export const viewport: Viewport = {
