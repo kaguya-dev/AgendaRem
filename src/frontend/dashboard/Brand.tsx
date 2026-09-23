@@ -7,7 +7,7 @@ export function Brand({ light = false }: { light?: boolean }) {
         <ListTodo size={23} strokeWidth={2.2} />
       </span>
       <span>
-        agenda<span className="brand-bold">magno</span>
+        agenda<span className="brand-bold">magna</span>
         <small>ESPAÇO PARA O QUE IMPORTA</small>
       </span>
     </div>

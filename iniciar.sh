@@ -36,7 +36,7 @@ export LOCAL_DATABASE_PATH="$agenda_dir/.data/local"
 export APP_URL="http://localhost:$agenda_port"
 export NEXT_TELEMETRY_DISABLED=1
 
-printf '\nAgendaMagno — ambiente local\n'
+printf '\nAgendaMagna — ambiente local\n'
 printf 'Painel: %s\n' "$APP_URL"
 printf 'Senha: consulte PANEL_PASSWORD no arquivo %s/.env\n' "$agenda_dir"
 printf 'Dados locais: %s\n' "$LOCAL_DATABASE_PATH"

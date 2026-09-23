@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { FinanceState } from '../finance/types';
 
 export const TIMEZONE = 'America/Bahia';
 export type Status = 'pending' | 'in_progress' | 'completed';
@@ -64,7 +65,16 @@ export interface Operation {
 }
 // Campo do comando que a resposta da pessoa vai preencher. 'deleteTasks' é booleano, e por
 // isso a escolha guarda 'true'/'false' em texto e é convertida ao retomar o pedido.
-export type PendingField = 'task' | 'group' | 'deleteTasks';
+export type PendingField =
+  | 'task'
+  | 'group'
+  | 'deleteTasks'
+  | 'entry'
+  | 'category'
+  | 'amount'
+  | 'kind'
+  | 'description'
+  | 'confirmed';
 export interface PendingOption {
   ref: string;
   label: string;
@@ -89,12 +99,14 @@ export interface Conversation {
   lastQuery?: Command;
 }
 export interface State {
+  finance?: FinanceState;
   tasks: Task[];
   groups: Group[];
   history: History[];
   operations: Operation[];
   conversations: Conversation[];
   settings: {
+    financeInitialized?: boolean;
     retentionDays: number;
     nextTaskId: number;
     revision: number;
@@ -147,6 +159,18 @@ export const tagsSchema = z.array(z.string().trim().min(1).max(40)).max(20);
 export const commandSchema = z
   .object({
     op: z.enum([
+      'finance_create',
+      'finance_update',
+      'finance_delete',
+      'finance_restore',
+      'finance_list',
+      'finance_create_template',
+      'finance_update_template',
+      'finance_delete_template',
+      'finance_create_category',
+      'finance_update_category',
+      'finance_archive_category',
+      'finance_restore_category',
       'create_group',
       'rename_group',
       'update_group',
@@ -169,6 +193,14 @@ export const commandSchema = z
       'clarify',
       'unsupported',
     ]),
+    entry: z.string().min(1).max(5000).optional(),
+    template: z.string().min(1).max(200).optional(),
+    category: z.string().min(1).max(100).optional(),
+    kind: z.enum(['income', 'expense']).optional(),
+    categoryKind: z.enum(['income', 'expense', 'both']).optional(),
+    amount: z.string().min(1).max(40).optional(),
+    date: dateSchema.optional(),
+    confirmed: z.boolean().optional(),
     task: z.string().min(1).max(200).optional(),
     group: z.string().min(1).max(100).nullable().optional(),
     title: z.string().trim().min(1).max(200).optional(),

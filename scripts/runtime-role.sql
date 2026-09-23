@@ -5,7 +5,9 @@ GRANT USAGE ON SCHEMA public TO agenda_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   agenda_meta, agenda_groups, agenda_tasks, agenda_history, agenda_operations,
   agenda_conversations, agenda_messages, agenda_limits, agenda_llm_providers,
-  agenda_llm_usage, agenda_security, agenda_sessions
+  agenda_llm_usage, agenda_security, agenda_sessions,
+  agenda_finance_entries, agenda_finance_categories, agenda_finance_templates,
+  agenda_notes, agenda_note_files
 TO agenda_runtime;
 -- Grant this role to a dedicated login created in Neon, then use that login in
 -- DATABASE_URL. It must NOT own the database/tables or inherit an admin role.

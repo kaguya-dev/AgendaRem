@@ -22,7 +22,22 @@ export const due = (t: Task) =>
   !t.dueDate
     ? 'Sem prazo'
     : `${t.dueDate === today() ? 'Hoje' : t.dueDate.split('-').slice(1).reverse().join('/') + (t.dueDate.slice(0, 4) !== today().slice(0, 4) ? '/' + t.dueDate.slice(0, 4) : '')}${t.dueTime ? ` · ${t.dueTime}` : ''}`;
+// Quanto falta para o prazo, em classes de destaque. Só vale para tarefas em aberto: na
+// lixeira e nas concluídas o prazo já não cobra nada de ninguém.
+export const urgency = (t: Task) => {
+  if (t.trashedAt || t.status === 'completed' || !t.dueDate) return '';
+  if (overdue(t)) return 'late';
+  if (t.dueDate === today()) return 'today';
+  const days = Math.round(
+    (new Date(`${t.dueDate}T12:00:00-03:00`).getTime() -
+      new Date(`${today()}T12:00:00-03:00`).getTime()) /
+      86400000,
+  );
+  return days <= 3 ? 'soon' : '';
+};
 export const labels: Record<string, string> = {
+  notes: 'Anotações',
+  finance: 'Financeiro',
   assistant: 'Assistente',
   calendar: 'Calendário',
   archived: 'Grupos arquivados',

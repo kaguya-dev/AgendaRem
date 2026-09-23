@@ -1,3 +1,13 @@
+import { financeSnapshot } from '@/backend/finance/store';
+import {
+  addNoteFile,
+  deleteNote,
+  deleteNoteFile,
+  listNotes,
+  readNote,
+  readNoteFile,
+  saveNote,
+} from '@/backend/notes/store';
 import { after } from 'next/server';
 import { z } from 'zod';
 import { cookie, cronAuth, sameOrigin } from '@/backend/auth';
@@ -73,6 +83,14 @@ async function handler(request: Request, context: { params: Promise<{ path: stri
     if (!current) throw new DomainError('Entre para continuar.', 401);
     if (method === 'GET' && path === 'security') return reply(await accessInfo(current));
     if (method === 'GET' && path === 'backup') return reply(await exportBackup());
+    if (method === 'GET' && path === 'finance')
+      return reply(await financeSnapshot(Object.fromEntries(new URL(request.url).searchParams)));
+    if (method === 'GET' && path === 'notes')
+      return reply(await listNotes(Object.fromEntries(new URL(request.url).searchParams)));
+    if (method === 'GET' && path === 'notes/note')
+      return reply(await readNote(Object.fromEntries(new URL(request.url).searchParams)));
+    if (method === 'GET' && path === 'notes/file')
+      return reply(await readNoteFile(Object.fromEntries(new URL(request.url).searchParams)));
     if (method === 'GET' && path === 'state') return reply(await snapshot());
     if (method === 'GET' && path === 'llm-providers') return reply(await listProviders());
     if (method !== 'POST') throw new DomainError('Rota não encontrada.', 404);
@@ -81,9 +99,11 @@ async function handler(request: Request, context: { params: Promise<{ path: stri
       await revokeSession(current.id);
       return reply({ ok: true }, 200, { 'Set-Cookie': cookie('', 0) });
     }
-    const body = JSON.parse(
-      await read(request, path === 'backup/import' ? 2 * 1024 * 1024 : 65536),
-    );
+    // Anexo de anotação chega em base64 no corpo JSON: 5 MB de arquivo cabem em pouco menos de
+    // 7 MB de texto, e o restante das rotas continua com o limite pequeno de sempre.
+    const limit =
+      path === 'notes/file' ? 7 * 1024 * 1024 : path === 'backup/import' ? 2 * 1024 * 1024 : 65536;
+    const body = JSON.parse(await read(request, limit));
     if (path === 'security') return reply(await updateAccess(current, body));
     if (path === 'backup/import') {
       const value = z
@@ -107,6 +127,10 @@ async function handler(request: Request, context: { params: Promise<{ path: stri
       if (started.run) after(started.run);
       return reply(started.accepted);
     }
+    if (path === 'notes') return reply(await saveNote(body));
+    if (path === 'notes/delete') return reply(await deleteNote(body));
+    if (path === 'notes/file') return reply(await addNoteFile(body));
+    if (path === 'notes/file/delete') return reply(await deleteNoteFile(body));
     if (path === 'chat/clear') return reply(await clearChat());
     if (path === 'llm-providers') return reply(await saveProvider(body));
     if (path === 'llm-providers/delete' || path === 'llm-providers/reset') {

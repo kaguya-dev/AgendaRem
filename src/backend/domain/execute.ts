@@ -1,3 +1,4 @@
+import { financeCommand, isFinance } from '../finance/rules';
 import { randomUUID } from 'node:crypto';
 import { nextDue } from './recurrence';
 import { dueLabel, formatDate, normalize } from './format';
@@ -44,7 +45,7 @@ function validateSchedule(t: Task) {
 // estas palavras, sem passar por um modelo que poderia suavizá-la.
 export const UNSUPPORTED = 'Não consigo fazer isso ainda.';
 export const HELP =
-  'Você pode criar grupos e tarefas, editar, concluir, restaurar e consultar. Exemplos:\n• Crie um grupo chamado Estudos\n• Adicione ler capítulo 3 em Estudos\n• Anota: comprar pilhas\n• Finalizei #1\n• Restaure #1\n• O que vence hoje?\n• Quais tarefas estão na lixeira?\n• Exclua as tarefas da lixeira depois de 15 dias\n• Desfaça a última alteração\nPara descrições e campos, use também o painel. Com uma IA cadastrada em Modelos de IA, você escreve do seu jeito, sem seguir esses formatos.';
+  'Você pode criar grupos e tarefas, editar, concluir, restaurar e consultar. Exemplos:\n• Crie um grupo chamado Estudos\n• Adicione ler capítulo 3 em Estudos\n• Anota: comprar pilhas\n• Finalizei #1\n• Restaure #1\n• O que vence hoje?\n• Quais tarefas estão na lixeira?\n• Exclua as tarefas da lixeira depois de 15 dias\n• Desfaça a última alteração\nUse o microfone do chat para ditar, revisar e enviar texto (não recebe arquivos de áudio). Com IA, registre receitas/despesas, categorias e consultas financeiras, por exemplo “Gastei 42,90 no almoço hoje”. O Financeiro também funciona por formulário. Para descrições e campos, use também o painel. Com uma IA cadastrada em Modelos de IA, você escreve do seu jeito, sem seguir esses formatos.';
 
 export function execute(
   original: State,
@@ -91,6 +92,13 @@ export function execute(
   };
   try {
     for (const c of commands) {
+      if (isFinance(c)) {
+        const result = financeCommand(state, c, channel, now);
+        replies.push(result.reply);
+        if (result.changed) mutation = barrier = true;
+        commandIndex++;
+        continue;
+      }
       switch (c.op) {
         case 'help':
           replies.push(HELP);
@@ -408,7 +416,7 @@ export function execute(
           const op = [...state.operations].reverse().find((o) => o.channel === channel);
           if (!op || op.undone || !op.undoable)
             throw new DomainError(
-              'A última operação não pode ser desfeita. Alterações de configurações não têm desfazer.',
+              'A última operação não pode ser desfeita. Configurações e finanças não têm desfazer global. Corrija ou restaure lançamentos pelo Financeiro.',
             );
           if (now.getTime() - new Date(op.at).getTime() > 86400000)
             throw new DomainError(
@@ -551,6 +559,17 @@ export function pendingAnswer(
       ];
     return [{ op: 'create_group', name: p.createGroup }, ...commands];
   }
+  if (['amount', 'description', 'kind'].includes(p.field) && !p.options.length) {
+    const value =
+      p.field === 'kind'
+        ? ({ receita: 'income', despesa: 'expense' } as const)[
+            normalize(text) as 'receita' | 'despesa'
+          ]
+        : text.trim();
+    if (!value) return null;
+    Object.assign(commands[p.index], { [p.field]: value });
+    return commands;
+  }
   if (/^\d+$/.test(text.trim())) {
     const choice = p.options[Number(text.trim()) - 1];
     if (!choice)
@@ -588,7 +607,14 @@ function applyChoice(
   pending: NonNullable<Conversation['pending']>,
   choice: PendingOption,
 ): Command[] {
-  if (pending.field === 'deleteTasks') commands[pending.index].deleteTasks = choice.ref === 'true';
-  else commands[pending.index][pending.field] = choice.ref;
+  if (pending.field === 'confirmed') {
+    if (choice.ref === 'false')
+      return [
+        { op: 'clarify', question: 'Exclusão cancelada. Envie o próximo pedido ou retome a fila.' },
+      ];
+    commands[pending.index].confirmed = true;
+  } else if (pending.field === 'deleteTasks')
+    commands[pending.index].deleteTasks = choice.ref === 'true';
+  else Object.assign(commands[pending.index], { [pending.field]: choice.ref });
   return commands;
 }

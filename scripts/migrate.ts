@@ -27,7 +27,7 @@ export async function main() {
     process.env.LOCAL_DATABASE_PATH ?? '.data/agenda',
   );
   // Dizer onde foi aplicada evita a dúvida que motivou a precedência acima.
-  console.log(`Schema do AgendaMagno aplicado em ${target.label}. Migração idempotente.`);
+  console.log(`Schema do AgendaMagna aplicado em ${target.label}. Migração idempotente.`);
   await database.close();
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)

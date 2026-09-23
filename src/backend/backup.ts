@@ -1,3 +1,4 @@
+import { categorySchema, entrySchema, templateSchema } from './finance/types';
 import { z } from 'zod';
 import { db, loadState, lock, saveState, type Database } from './db';
 import { DomainError, emptyState, normalize } from './domain';
@@ -42,7 +43,7 @@ const task = z
     recurringFrom: z.number().int().positive().optional(),
   })
   .strict();
-export const backupSchema = z
+const backupV1 = z
   .object({
     format: z.literal('AgendaMagno'),
     version: z.literal(1),
@@ -52,14 +53,27 @@ export const backupSchema = z
     retentionDays: z.number().int().min(1).max(3650),
   })
   .strict();
+const backupV2 = backupV1.extend({
+  version: z.literal(2),
+  finance: z
+    .object({
+      categories: z.array(categorySchema).max(1000),
+      entries: z.array(entrySchema).max(10000),
+      // Arquivos da versão 2 gerados antes dos modelos de lançamento não têm esta lista.
+      templates: z.array(templateSchema).max(1000).default([]),
+    })
+    .strict(),
+});
+export const backupSchema = z.union([backupV1, backupV2]);
 export async function exportBackup(connection?: Database) {
   const database = connection ?? (await db());
   return database.transaction(async (tx) => {
     await lock(tx);
-    const state = await loadState(tx);
+    const state = await loadState(tx, true);
     return {
       format: 'AgendaMagno',
-      version: 1,
+      version: 2,
+      finance: state.finance,
       createdAt: new Date().toISOString(),
       groups: state.groups,
       tasks: state.tasks,
@@ -96,6 +110,28 @@ export async function importBackup(
     if (task.checklist && new Set(task.checklist.map((i) => i.id)).size !== task.checklist.length)
       throw new DomainError('Checklist com identificadores duplicados.');
   }
+  if (value.version === 2) {
+    const categories = value.finance.categories;
+    const entries = value.finance.entries;
+    if (
+      new Set(categories.map((c) => c.id)).size !== categories.length ||
+      new Set(categories.map((c) => normalize(c.name))).size !== categories.length ||
+      new Set(entries.map((e) => e.id)).size !== entries.length
+    )
+      throw new DomainError('O arquivo contém categorias ou lançamentos duplicados.');
+    if (new Set(value.finance.templates.map((t) => t.id)).size !== value.finance.templates.length)
+      throw new DomainError('O arquivo contém modelos de lançamento duplicados.');
+    for (const entry of [...entries, ...value.finance.templates]) {
+      const category = categories.find((c) => c.id === entry.categoryId);
+      if (!category || (category.kind !== 'both' && category.kind !== entry.kind))
+        throw new DomainError('Categoria inexistente ou incompatível no arquivo.');
+      if (
+        entry.updatedAt < entry.createdAt ||
+        ('deletedAt' in entry && entry.deletedAt && entry.deletedAt < entry.createdAt)
+      )
+        throw new DomainError('Datas financeiras inconsistentes.');
+    }
+  }
   const database = connection ?? (await db());
   return database.transaction(async (tx) => {
     await lock(tx);
@@ -103,6 +139,7 @@ export async function importBackup(
     if (before.settings.revision !== expectedRevision)
       throw new DomainError('A agenda mudou. Atualize e revise a importação novamente.', 409);
     const state = emptyState();
+    if (value.version === 2) state.finance = value.finance;
     state.groups = value.groups;
     state.tasks = value.tasks.map((t) =>
       t.trashReason === 'completed'
@@ -110,6 +147,7 @@ export async function importBackup(
         : t,
     );
     state.settings = {
+      financeInitialized: before.settings.financeInitialized,
       retentionDays: value.retentionDays,
       nextTaskId: Math.max(before.settings.nextTaskId, ...value.tasks.map((t) => t.id + 1)),
       revision: before.settings.revision + 1,

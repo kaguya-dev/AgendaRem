@@ -184,7 +184,7 @@ export async function updateAccess(current: Session, input: unknown) {
       await save(tx, security);
       return {
         secret,
-        uri: `otpauth://totp/AgendaMagno:Proprietario?secret=${secret}&issuer=AgendaMagno&algorithm=SHA1&digits=6&period=30`,
+        uri: `otpauth://totp/AgendaMagna:Proprietario?secret=${secret}&issuer=AgendaMagna&algorithm=SHA1&digits=6&period=30`,
       };
     } else if (value.action === 'enable') {
       if (security.totp || !security.pendingTotp || (security.pendingUntil ?? 0) < Date.now())

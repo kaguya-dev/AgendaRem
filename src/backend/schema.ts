@@ -51,4 +51,31 @@ CREATE TABLE IF NOT EXISTS agenda_sessions (
 CREATE INDEX IF NOT EXISTS agenda_sessions_expiry ON agenda_sessions(expires_at);
 UPDATE agenda_tasks SET data=data || '{"trashedAt":null,"purgeAt":null,"trashReason":null}'::jsonb
  WHERE data->>'status'='completed' AND data->>'trashReason'='completed';
+
+CREATE TABLE IF NOT EXISTS agenda_finance_categories (id text PRIMARY KEY, data jsonb NOT NULL);
+CREATE TABLE IF NOT EXISTS agenda_finance_entries (id text PRIMARY KEY, data jsonb NOT NULL);
+CREATE TABLE IF NOT EXISTS agenda_finance_templates (id text PRIMARY KEY, data jsonb NOT NULL);
+CREATE TABLE IF NOT EXISTS agenda_notes (id text PRIMARY KEY, data jsonb NOT NULL);
+CREATE TABLE IF NOT EXISTS agenda_note_files (
+  id text PRIMARY KEY,
+  note_id text NOT NULL,
+  data jsonb NOT NULL,
+  content text NOT NULL
+);
+CREATE INDEX IF NOT EXISTS agenda_note_files_note ON agenda_note_files(note_id);
+CREATE INDEX IF NOT EXISTS agenda_notes_updated ON agenda_notes ((data->>'updatedAt'));
+CREATE INDEX IF NOT EXISTS agenda_finance_period ON agenda_finance_entries ((data->>'date'));
+CREATE INDEX IF NOT EXISTS agenda_finance_category ON agenda_finance_entries ((data->>'categoryId'));
+CREATE INDEX IF NOT EXISTS agenda_finance_active ON agenda_finance_entries ((data->>'date')) WHERE data->>'deletedAt' IS NULL;
+INSERT INTO agenda_finance_categories(id,data) SELECT '00000000-0000-4000-8000-000000000001', '{"id": "00000000-0000-4000-8000-000000000001", "name": "Salário", "kind": "income", "archivedAt": null, "version": 1, "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": "2026-01-01T00:00:00.000Z"}'::jsonb WHERE NOT EXISTS (SELECT 1 FROM agenda_meta WHERE data->>'financeInitialized'='true') ON CONFLICT DO NOTHING;
+INSERT INTO agenda_finance_categories(id,data) SELECT '00000000-0000-4000-8000-000000000002', '{"id": "00000000-0000-4000-8000-000000000002", "name": "Outras receitas", "kind": "income", "archivedAt": null, "version": 1, "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": "2026-01-01T00:00:00.000Z"}'::jsonb WHERE NOT EXISTS (SELECT 1 FROM agenda_meta WHERE data->>'financeInitialized'='true') ON CONFLICT DO NOTHING;
+INSERT INTO agenda_finance_categories(id,data) SELECT '00000000-0000-4000-8000-000000000003', '{"id": "00000000-0000-4000-8000-000000000003", "name": "Alimentação", "kind": "expense", "archivedAt": null, "version": 1, "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": "2026-01-01T00:00:00.000Z"}'::jsonb WHERE NOT EXISTS (SELECT 1 FROM agenda_meta WHERE data->>'financeInitialized'='true') ON CONFLICT DO NOTHING;
+INSERT INTO agenda_finance_categories(id,data) SELECT '00000000-0000-4000-8000-000000000004', '{"id": "00000000-0000-4000-8000-000000000004", "name": "Transporte", "kind": "expense", "archivedAt": null, "version": 1, "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": "2026-01-01T00:00:00.000Z"}'::jsonb WHERE NOT EXISTS (SELECT 1 FROM agenda_meta WHERE data->>'financeInitialized'='true') ON CONFLICT DO NOTHING;
+INSERT INTO agenda_finance_categories(id,data) SELECT '00000000-0000-4000-8000-000000000005', '{"id": "00000000-0000-4000-8000-000000000005", "name": "Moradia", "kind": "expense", "archivedAt": null, "version": 1, "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": "2026-01-01T00:00:00.000Z"}'::jsonb WHERE NOT EXISTS (SELECT 1 FROM agenda_meta WHERE data->>'financeInitialized'='true') ON CONFLICT DO NOTHING;
+INSERT INTO agenda_finance_categories(id,data) SELECT '00000000-0000-4000-8000-000000000006', '{"id": "00000000-0000-4000-8000-000000000006", "name": "Saúde", "kind": "expense", "archivedAt": null, "version": 1, "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": "2026-01-01T00:00:00.000Z"}'::jsonb WHERE NOT EXISTS (SELECT 1 FROM agenda_meta WHERE data->>'financeInitialized'='true') ON CONFLICT DO NOTHING;
+INSERT INTO agenda_finance_categories(id,data) SELECT '00000000-0000-4000-8000-000000000007', '{"id": "00000000-0000-4000-8000-000000000007", "name": "Estudos", "kind": "expense", "archivedAt": null, "version": 1, "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": "2026-01-01T00:00:00.000Z"}'::jsonb WHERE NOT EXISTS (SELECT 1 FROM agenda_meta WHERE data->>'financeInitialized'='true') ON CONFLICT DO NOTHING;
+INSERT INTO agenda_finance_categories(id,data) SELECT '00000000-0000-4000-8000-000000000008', '{"id": "00000000-0000-4000-8000-000000000008", "name": "Lazer", "kind": "expense", "archivedAt": null, "version": 1, "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": "2026-01-01T00:00:00.000Z"}'::jsonb WHERE NOT EXISTS (SELECT 1 FROM agenda_meta WHERE data->>'financeInitialized'='true') ON CONFLICT DO NOTHING;
+INSERT INTO agenda_finance_categories(id,data) SELECT '00000000-0000-4000-8000-000000000009', '{"id": "00000000-0000-4000-8000-000000000009", "name": "Compras", "kind": "expense", "archivedAt": null, "version": 1, "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": "2026-01-01T00:00:00.000Z"}'::jsonb WHERE NOT EXISTS (SELECT 1 FROM agenda_meta WHERE data->>'financeInitialized'='true') ON CONFLICT DO NOTHING;
+INSERT INTO agenda_finance_categories(id,data) SELECT '00000000-0000-4000-8000-000000000010', '{"id": "00000000-0000-4000-8000-000000000010", "name": "Sem categoria", "kind": "both", "archivedAt": null, "version": 1, "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": "2026-01-01T00:00:00.000Z"}'::jsonb WHERE NOT EXISTS (SELECT 1 FROM agenda_meta WHERE data->>'financeInitialized'='true') ON CONFLICT DO NOTHING;
+UPDATE agenda_meta SET data=data || '{"financeInitialized":true}'::jsonb WHERE id=1 AND data->>'financeInitialized' IS DISTINCT FROM 'true';
 `;

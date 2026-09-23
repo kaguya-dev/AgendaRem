@@ -946,3 +946,85 @@ test('endereço de site em vez de endpoint é nomeado, por redirecionamento ou p
   assert.doesNotMatch(api, /HTML|redirecionamento/);
   assert.match(api, /endpoint completo de Chat Completions/);
 });
+
+test('financeiro usa categorias no mesmo pedido, omite tarefas e não aceita confirmação inventada', async () => {
+  await saveProvider(config(), database);
+  const state = emptyState();
+  state.tasks.push({
+    id: 999,
+    title: 'Título de tarefa privado',
+    description: '',
+    groupId: null,
+    status: 'pending',
+    priority: 'normal',
+    dueDate: null,
+    dueTime: null,
+    completedAt: null,
+    trashedAt: null,
+    purgeAt: null,
+    trashReason: null,
+    version: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  let calls = 0,
+    prompt = '';
+  const commands = await interpret(
+    state,
+    'Gastei 42,90 no almoço hoje',
+    'finance-test',
+    new Date(),
+    database,
+    {
+      fetch: async (_url, init) => {
+        calls++;
+        prompt = JSON.parse(String(init.body)).messages[0].content;
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  commands: [
+                    {
+                      op: 'finance_create',
+                      kind: 'expense',
+                      amount: '42,90',
+                      description: 'Almoço',
+                      category: 'Alimentação',
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+        });
+      },
+    },
+  );
+  assert.equal(calls, 1);
+  assert.equal(commands[0].amount, '42,90');
+  assert.match(prompt, /Alimentação/);
+  assert.doesNotMatch(prompt, /Título de tarefa privado/);
+  const deletion = await interpret(
+    state,
+    'Exclua o lançamento Almoço',
+    'finance-test',
+    new Date(),
+    database,
+    {
+      fetch: async () =>
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  commands: [{ op: 'finance_delete', entry: 'Almoço', confirmed: true }],
+                }),
+              },
+            },
+          ],
+        }),
+    },
+  );
+  assert.equal(deletion[0].confirmed, undefined);
+});
