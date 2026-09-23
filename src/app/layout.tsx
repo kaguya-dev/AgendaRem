@@ -21,7 +21,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `${THEME_SCRIPT};if(location.port==='3000'&&'serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(r){for(var i=0;i<r.length;i++)r[i].unregister()});if('caches' in window){caches.keys().then(function(k){for(var i=0;i<k.length;i++)caches.delete(k[i])})}}`,
+          }}
+        />
       </head>
       <body>{children}</body>
     </html>

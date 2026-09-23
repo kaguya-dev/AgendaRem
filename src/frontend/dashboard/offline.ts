@@ -192,7 +192,17 @@ export async function enqueue(commands: Command[], id: string) {
   await setPending(queue);
 }
 export async function registerWorker() {
-  if ('serviceWorker' in navigator) await navigator.serviceWorker.register('/sw.js');
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+  if (process.env.NODE_ENV === 'development') {
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const reg of registrations) await reg.unregister();
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+  await navigator.serviceWorker.register('/sw.js');
 }
 export function reminderAt(task: Task) {
   if (
