@@ -115,13 +115,15 @@ async function runModel<T>(
     attempts++;
     let response: Response;
     try {
-      const apiKey = decryptKey(provider.encrypted_key, provider.id);
+      const apiKey = provider.encrypted_key
+        ? decryptKey(provider.encrypted_key, provider.id)
+        : '';
       const { config } = provider;
       const url =
         config.kind === 'gemini'
           ? `${GEMINI_URL}/${encodeURIComponent(config.model.replace(/^models\//, ''))}:generateContent`
           : config.apiUrl;
-      validateApiUrl(url);
+      validateApiUrl(url, config.kind === 'local');
       const body =
         config.kind === 'gemini'
           ? {

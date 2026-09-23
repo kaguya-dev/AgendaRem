@@ -23,7 +23,13 @@ import { exportBackup, importBackup } from '@/backend/backup';
 import { databaseHint } from '@/backend/db';
 import { DomainError } from '@/backend/domain';
 import { cleanup, clearChat, panelAction, snapshot, startChat } from '@/backend/service';
-import { deleteProvider, listProviders, resetProvider, saveProvider } from '@/backend/llm';
+import {
+  deleteProvider,
+  detectLocalModels,
+  listProviders,
+  resetProvider,
+  saveProvider,
+} from '@/backend/llm';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -93,6 +99,8 @@ async function handler(request: Request, context: { params: Promise<{ path: stri
       return reply(await readNoteFile(Object.fromEntries(new URL(request.url).searchParams)));
     if (method === 'GET' && path === 'state') return reply(await snapshot());
     if (method === 'GET' && path === 'llm-providers') return reply(await listProviders());
+    if (method === 'GET' && path === 'llm-providers/detect-local')
+      return reply(await detectLocalModels());
     if (method !== 'POST') throw new DomainError('Rota não encontrada.', 404);
     sameOrigin(request);
     if (path === 'logout') {
@@ -154,7 +162,7 @@ async function handler(request: Request, context: { params: Promise<{ path: stri
         400,
       );
     if (error instanceof SyntaxError) return reply({ error: 'JSON inválido.' }, 400);
-    console.error('AgendaMagno API failure:', error instanceof Error ? error.name : 'UnknownError');
+    console.error('AgendaRem API failure:', error);
     return reply({ error: `Não foi possível concluir a operação. ${databaseHint(error)}` }, 500);
   }
 }

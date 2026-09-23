@@ -147,3 +147,32 @@ export async function resetProvider(id: unknown, database?: Database) {
   if (!result.rows.length) throw new DomainError('Provedor de IA não encontrado.', 404);
   return listProviders(database);
 }
+
+export interface LocalDetectedModel {
+  name: string;
+  size?: string;
+  details?: string;
+}
+
+export async function detectLocalModels(): Promise<{
+  models: LocalDetectedModel[];
+  error?: string;
+}> {
+  try {
+    const res = await fetch('http://127.0.0.1:11434/api/tags', {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return { models: [], error: `Ollama retornou erro HTTP ${res.status}` };
+    const data = (await res.json()) as {
+      models?: Array<{ name: string; size?: number; details?: { parameter_size?: string } }>;
+    };
+    const models: LocalDetectedModel[] = (data.models ?? []).map((m) => ({
+      name: m.name,
+      size: m.size ? `${(m.size / (1024 * 1024 * 1024)).toFixed(1)} GB` : undefined,
+      details: m.details?.parameter_size,
+    }));
+    return { models };
+  } catch {
+    return { models: [], error: 'Ollama não encontrado em 127.0.0.1:11434' };
+  }
+}

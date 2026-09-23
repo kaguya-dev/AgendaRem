@@ -7,7 +7,13 @@
 //   reply.ts       second pass: rewrites the finished reply in natural language, then checks
 //                  that no task line, code or date was changed before accepting it
 export { isPublicAddress, validateApiUrl } from './ssrf';
-export { listProviders, saveProvider, deleteProvider, resetProvider } from './providers';
+export {
+  listProviders,
+  saveProvider,
+  deleteProvider,
+  resetProvider,
+  detectLocalModels,
+} from './providers';
 export {
   generateCommands,
   generateText,

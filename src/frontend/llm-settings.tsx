@@ -82,6 +82,30 @@ export default function LlmSettings({ onChange }: { onChange: () => Promise<void
   const [notice, setNotice] = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [detectedModels, setDetectedModels] = useState<
+    Array<{ name: string; size?: string; details?: string }>
+  >([]);
+  const [detecting, setDetecting] = useState(false);
+  const [detectError, setDetectError] = useState('');
+
+  const detectLocal = useCallback(async () => {
+    setDetecting(true);
+    setDetectError('');
+    try {
+      const res = await request<{
+        models: Array<{ name: string; size?: string; details?: string }>;
+        error?: string;
+      }>('/detect-local');
+      setDetectedModels(res.models ?? []);
+      if (res.error && (!res.models || res.models.length === 0)) {
+        setDetectError(res.error);
+      }
+    } catch (e) {
+      setDetectError((e as Error).message);
+    } finally {
+      setDetecting(false);
+    }
+  }, []);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
@@ -424,45 +448,109 @@ export default function LlmSettings({ onChange }: { onChange: () => Promise<void
               </div>
             </div>
             {form.kind === 'local' && (
-              <div style={{ margin: '8px 0 12px' }}>
-                <span style={{ fontSize: '12px', display: 'block', marginBottom: '6px', opacity: 0.85 }}>
-                  Preenchimento rápido:
-                </span>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <div
+                style={{
+                  margin: '10px 0 16px',
+                  padding: '12px',
+                  background: 'var(--bg-8)',
+                  borderRadius: '10px',
+                  border: '1px solid var(--border-5)',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '8px',
+                  }}
+                >
+                  <span style={{ fontSize: '13px', fontWeight: 600 }}>
+                    Modelos instalados no seu Ollama:
+                  </span>
                   <button
                     type="button"
                     className="button secondary"
-                    style={{ fontSize: '11px', padding: '4px 10px' }}
-                    onClick={() => {
-                      update('apiUrl', 'http://127.0.0.1:11434/v1/chat/completions');
-                      if (!form.model) update('model', 'llama3');
-                      if (!form.name) update('name', 'Ollama Local');
+                    style={{ fontSize: '11px', padding: '3px 8px' }}
+                    disabled={detecting}
+                    onClick={() => void detectLocal()}
+                  >
+                    <RefreshCw size={12} className={detecting ? 'spin' : ''} />
+                    {detecting ? 'Buscando…' : 'Detectar agora'}
+                  </button>
+                </div>
+                {detectedModels.length > 0 ? (
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {detectedModels.map((m) => (
+                      <button
+                        key={m.name}
+                        type="button"
+                        className={`button ${form.model === m.name ? 'primary' : 'secondary'}`}
+                        style={{ fontSize: '11px', padding: '5px 10px', borderRadius: '6px' }}
+                        onClick={() => {
+                          update('model', m.name);
+                          update('apiUrl', 'http://127.0.0.1:11434/v1/chat/completions');
+                          if (!form.name || form.name.startsWith('Ollama')) {
+                            update('name', `Ollama · ${m.name}`);
+                          }
+                        }}
+                      >
+                        🦙 {m.name} {m.size ? `(${m.size})` : ''}
+                      </button>
+                    ))}
+                  </div>
+                ) : detecting ? (
+                  <p style={{ fontSize: '12px', margin: 0, opacity: 0.8 }}>
+                    Conectando ao Ollama em 127.0.0.1:11434…
+                  </p>
+                ) : (
+                  <p style={{ fontSize: '12px', margin: 0, color: 'var(--text-12)' }}>
+                    {detectError ||
+                      'Clique em “Detectar agora” para carregar os modelos instalados no seu Ollama.'}
+                  </p>
+                )}
+
+                <div
+                  style={{
+                    marginTop: '10px',
+                    borderTop: '1px solid var(--border-5)',
+                    paddingTop: '8px',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      display: 'block',
+                      marginBottom: '6px',
+                      opacity: 0.75,
                     }}
                   >
-                    🦙 Ollama (11434)
-                  </button>
-                  <button
-                    type="button"
-                    className="button secondary"
-                    style={{ fontSize: '11px', padding: '4px 10px' }}
-                    onClick={() => {
-                      update('apiUrl', 'http://127.0.0.1:1234/v1/chat/completions');
-                      if (!form.name) update('name', 'LM Studio');
-                    }}
-                  >
-                    🤖 LM Studio (1234)
-                  </button>
-                  <button
-                    type="button"
-                    className="button secondary"
-                    style={{ fontSize: '11px', padding: '4px 10px' }}
-                    onClick={() => {
-                      update('apiUrl', 'http://127.0.0.1:8000/v1/chat/completions');
-                      if (!form.name) update('name', 'LocalAI / vLLM');
-                    }}
-                  >
-                    ⚡ LocalAI / vLLM (8000)
-                  </button>
+                    Atalhos para outros servidores locais:
+                  </span>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="button secondary"
+                      style={{ fontSize: '11px', padding: '3px 8px' }}
+                      onClick={() => {
+                        update('apiUrl', 'http://127.0.0.1:1234/v1/chat/completions');
+                        if (!form.name) update('name', 'LM Studio');
+                      }}
+                    >
+                      🤖 LM Studio (1234)
+                    </button>
+                    <button
+                      type="button"
+                      className="button secondary"
+                      style={{ fontSize: '11px', padding: '3px 8px' }}
+                      onClick={() => {
+                        update('apiUrl', 'http://127.0.0.1:8000/v1/chat/completions');
+                        if (!form.name) update('name', 'LocalAI / vLLM');
+                      }}
+                    >
+                      ⚡ LocalAI / vLLM (8000)
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
